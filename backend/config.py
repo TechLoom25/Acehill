@@ -26,7 +26,16 @@ def _load_secret_key() -> str:
     return key
 
 
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR / 'acehill.db'}")
+def _database_url() -> str:
+    """SQLite by default. Accepts postgres:// and postgresql:// and maps them to the psycopg 3 driver."""
+    url = os.getenv("DATABASE_URL") or f"sqlite:///{BASE_DIR / 'acehill.db'}"
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix):]
+    return url
+
+
+DATABASE_URL = _database_url()
 SECRET_KEY = _load_secret_key()
 TOKEN_TTL_MINUTES = int(os.getenv("TOKEN_TTL_MINUTES", "720"))  # 12 hours
 SETUP_KEY = os.getenv("SETUP_KEY", "")

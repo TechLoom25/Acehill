@@ -6,3 +6,4 @@ pyjwt>=2.8
 python-dotenv>=1.0
 africastalking
 tzdata
+psycopg[binary]>=3.1

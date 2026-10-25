@@ -56,6 +56,10 @@ administrator. After that, sign in normally and add staff under **Staff**.
 Without `AT_API_KEY`, messages print in the backend console. Set `AT_USERNAME` / `AT_API_KEY`
 (Africa's Talking) to send real SMS.
 
+## Deploying
+
+See [`deploy/DEPLOY.md`](deploy/DEPLOY.md): nginx + PostgreSQL on a DigitalOcean droplet, HTTPS, backups.
+
 ## Tests
 
     cd backend

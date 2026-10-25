@@ -20,9 +20,12 @@ from security import throttle  # noqa: E402
 
 @pytest.fixture()
 def client():
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
+    url = os.getenv("TEST_DATABASE_URL")  # e.g. a throwaway PostgreSQL database
+    if url:
+        engine = create_engine(url)
+        SQLModel.metadata.drop_all(engine)
+    else:
+        engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     SQLModel.metadata.create_all(engine)
 
     def override():
