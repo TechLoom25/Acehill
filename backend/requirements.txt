@@ -1,0 +1,8 @@
+fastapi>=0.110
+uvicorn[standard]
+sqlmodel>=0.0.16
+pydantic>=2.5
+pyjwt>=2.8
+python-dotenv>=1.0
+africastalking
+tzdata
