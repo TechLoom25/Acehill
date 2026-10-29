@@ -16,6 +16,18 @@ function StaffForm({ person, onClose, onSaved }) {
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
+  async function remove() {
+    if (!window.confirm(`Permanently delete ${person.full_name}? They will be signed out immediately.\n\nTheir name stays on past repairs and payments. To keep the account but stop them signing in, untick "Account is active" instead.`)) return;
+    setBusy(true);
+    try {
+      await api(`/users/${person.id}`, { method: "DELETE" });
+      onSaved(`${person.full_name} was deleted.`);
+    } catch (ex) {
+      setError({ type: "err", text: ex.message });
+      setBusy(false);
+    }
+  }
+
   async function submit(e) {
     e.preventDefault();
     setBusy(true);
@@ -62,9 +74,12 @@ function StaffForm({ person, onClose, onSaved }) {
           <input type="password" autoComplete="new-password" value={f.password} onChange={set("password")} minLength={8} required={!editing} />
         </label>
         <Notice n={error} />
-        <div className="row end">
-          <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
-          <button className="btn" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
+        <div className="row spread" style={{ marginBottom: 0 }}>
+          {editing && !isSelf ? <button type="button" className="btn danger" disabled={busy} onClick={remove}>Delete staff</button> : <span />}
+          <span className="row" style={{ marginBottom: 0 }}>
+            <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
+            <button className="btn" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
+          </span>
         </div>
       </form>
     </Modal>

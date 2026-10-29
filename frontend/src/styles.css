@@ -151,3 +151,14 @@ a.stat:hover { border-color: var(--brand); text-decoration: none; }
 .chart-bars div { width: 40%; max-width: 22px; min-height: 2px; border-radius: 4px 4px 0 0; }
 .chart .cash, .legend .cash { background: #7aa7ff; } .chart .profit, .legend .profit { background: var(--good); }
 .legend { display: flex; gap: 16px; margin-top: 12px; font-size: 12px; color: var(--muted); } .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; }
+
+/* ---------- loyalty tiers, danger actions, reasons ---------- */
+.badge.tier-returning { background: #e8f4ff; color: #0b5cad; }
+.badge.tier-silver { background: #eef0f3; color: #475467; box-shadow: inset 0 0 0 1px #c7ccd4; }
+.badge.tier-gold { background: #fff4d6; color: #8a5a00; box-shadow: inset 0 0 0 1px #f0d48a; }
+.badge.tier-platinum { background: #efe9ff; color: #5b34c7; box-shadow: inset 0 0 0 1px #cbbaf5; }
+.badge.tier-new { background: #f2f4f7; color: #667085; }
+.badge.st-incomplete { background: var(--bad-soft); color: var(--bad); }
+.btn.danger { background: #fff; color: var(--bad); border-color: #f1b8b2; }
+.btn.danger:hover:not(:disabled) { background: var(--bad-soft); }
+textarea.reason { min-height: 60px; margin-top: 6px; font-size: 13px; min-width: 190px; }

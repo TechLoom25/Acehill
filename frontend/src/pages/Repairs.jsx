@@ -1,17 +1,27 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { api } from "../api.js";
 import { useAuth } from "../auth.jsx";
-import { Icon, Notice, PageHeader, ProgressBar, Spinner } from "../components/ui.jsx";
+import { Icon, Notice, PageHeader, ProgressBar, Spinner, TierBadge } from "../components/ui.jsx";
 import StaffDatalist from "../components/StaffDatalist.jsx";
 import { STATUSES, money, toLocalInput } from "../lib.js";
 
 function RepairRow({ r, showMoney, onSaved, onError }) {
-  const initial = { status: r.status, progress: r.progress, assigned_to: r.assigned_to || "", eta: toLocalInput(r.estimated_completion) };
+  const initial = {
+    status: r.status,
+    progress: r.progress,
+    assigned_to: r.assigned_to || "",
+    eta: toLocalInput(r.estimated_completion),
+    reason: r.failure_reason || "",
+  };
   const [d, setD] = useState(initial);
   const [busy, setBusy] = useState(false);
-  const dirty = d.status !== initial.status || Number(d.progress) !== initial.progress ||
-    d.assigned_to !== initial.assigned_to || d.eta !== initial.eta;
+  const needsReason = d.status === "incomplete";
+  const dirty =
+    d.status !== initial.status || Number(d.progress) !== initial.progress ||
+    d.assigned_to !== initial.assigned_to || d.eta !== initial.eta ||
+    (needsReason && d.reason.trim() !== initial.reason);
+  const canSave = dirty && (!needsReason || d.reason.trim().length > 0);
 
   const changeStatus = (status) =>
     setD({ ...d, status, progress: status === "ready" || status === "collected" ? 100 : d.progress });
@@ -26,6 +36,7 @@ function RepairRow({ r, showMoney, onSaved, onError }) {
           progress: Math.min(100, Math.max(0, Number(d.progress) || 0)),
           assigned_to: d.assigned_to,
           estimated_completion: d.eta ? new Date(d.eta).toISOString() : null,
+          reason: needsReason ? d.reason.trim() : undefined,
         },
       });
       onSaved(saved);
@@ -40,8 +51,10 @@ function RepairRow({ r, showMoney, onSaved, onError }) {
       <td><span className="badge">{r.ticket_code}</span></td>
       <td>
         <Link to={`/repairs/${r.id}`}><strong>{r.brand} {r.model}</strong></Link>
-        <div className="sub">{r.customer_name} · {r.service_type}</div>
-        <div className="sub">IMEI {r.imei}</div>
+        <div className="sub">
+          {r.customer_name} <TierBadge tier={r.customer_tier} points={r.customer_points} /> · {r.service_type}
+        </div>
+        <div className="sub">{r.customer_phone ? `${r.customer_phone} · ` : ""}IMEI {r.imei}</div>
       </td>
       {showMoney && (
         <td>
@@ -55,6 +68,16 @@ function RepairRow({ r, showMoney, onSaved, onError }) {
         <select value={d.status} onChange={(e) => changeStatus(e.target.value)} aria-label="Status">
           {STATUSES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
+        {needsReason && (
+          <textarea
+            className="reason"
+            aria-label="Reason the repair could not be completed"
+            placeholder="Why couldn't it be fully repaired? (required)"
+            value={d.reason}
+            maxLength={1000}
+            onChange={(e) => setD({ ...d, reason: e.target.value })}
+          />
+        )}
       </td>
       <td style={{ minWidth: 120 }}>
         <input type="number" min="0" max="100" value={d.progress} aria-label="Progress percent"
@@ -63,7 +86,7 @@ function RepairRow({ r, showMoney, onSaved, onError }) {
       </td>
       <td><input type="datetime-local" value={d.eta} aria-label="Ready by" onChange={(e) => setD({ ...d, eta: e.target.value })} /></td>
       <td><input list="staff-names" value={d.assigned_to} aria-label="Technician" onChange={(e) => setD({ ...d, assigned_to: e.target.value })} /></td>
-      <td><button className="btn sm" disabled={!dirty || busy} onClick={save}>{busy ? "…" : "Save"}</button></td>
+      <td><button className="btn sm" disabled={!canSave || busy} onClick={save}>{busy ? "…" : "Save"}</button></td>
     </tr>
   );
 }
@@ -74,7 +97,7 @@ export default function Repairs() {
   const [rows, setRows] = useState(null);
   const [status, setStatus] = useState("");
   const [query, setQuery] = useState("");
-  const [note, setNote] = useState(null);
+  const [note, setNote] = useState(useLocation().state?.flash ?? null);
 
   const load = useCallback(async () => {
     const params = new URLSearchParams();

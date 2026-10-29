@@ -50,6 +50,7 @@ export default function Dashboard() {
       <div className="stats">
         <Stat label="Open repairs" value={data.open} to="/repairs" />
         <Stat label="Ready for pickup" value={data.ready} tone="good" to="/repairs" />
+        {data.incomplete > 0 && <Stat label="Could not complete" value={data.incomplete} tone="bad" to="/repairs" />}
         <Stat label="Overdue" value={data.overdue} tone={data.overdue ? "bad" : ""} to="/repairs" />
         <Stat label="New this week" value={data.new_this_week} />
         <Stat label="Finished this week" value={data.completed_this_week} />

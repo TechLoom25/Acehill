@@ -5,7 +5,8 @@ from typing import Optional
 
 from sqlmodel import Session, col, func, select
 
-from models import MoneyOut, Part, PartOut, Payment, PaymentOut, Repair, RepairOut, Role, User
+from loyalty import customer_stats
+from models import Customer, MoneyOut, Part, PartOut, Payment, PaymentOut, Repair, RepairOut, Role, User
 
 
 def has_finance_access(user: User) -> bool:
@@ -43,10 +44,10 @@ def payment_out(payment: Payment) -> PaymentOut:
 def build_repair_outs(
     session: Session,
     user: User,
-    rows: list[tuple[Repair, str]],
+    rows: list[tuple[Repair, Customer]],
     sms_sent: Optional[bool] = None,
 ) -> list[RepairOut]:
-    """Turn (repair, customer name) rows into API objects with money figures, using two queries in total."""
+    """Turn (repair, customer) rows into API objects with money and loyalty figures, using a fixed number of queries."""
     if not rows:
         return []
     parts_by: dict[int, list[Part]] = defaultdict(list)
@@ -63,12 +64,25 @@ def build_repair_outs(
         ):
             paid_by[repair_id] = int(total)
 
+    stats = customer_stats(session, list({customer.id for _, customer in rows}))
     outs = []
-    for repair, customer_name in rows:
+    for repair, customer in rows:
+        loyalty = stats[customer.id]
         money = (
             compute_money(repair, parts_by[repair.id], paid_by[repair.id], include_profit=user.role == Role.admin)
             if show_money
             else None
         )
-        outs.append(RepairOut(**repair.model_dump(), customer_name=customer_name, money=money, sms_sent=sms_sent))
+        outs.append(
+            RepairOut(
+                **repair.model_dump(),
+                customer_name=customer.name,
+                customer_phone=customer.phone if show_money else None,
+                customer_tier=loyalty.tier,
+                customer_points=loyalty.points,
+                customer_visits=loyalty.visits,
+                money=money,
+                sms_sent=sms_sent,
+            )
+        )
     return outs

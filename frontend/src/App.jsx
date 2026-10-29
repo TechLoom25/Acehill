@@ -4,6 +4,7 @@ import Layout from "./components/Layout.jsx";
 import { Spinner } from "./components/ui.jsx";
 import Account from "./pages/Account.jsx";
 import BulkSms from "./pages/BulkSms.jsx";
+import Customers from "./pages/Customers.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import Finance from "./pages/Finance.jsx";
 import Login from "./pages/Login.jsx";
@@ -66,6 +67,7 @@ export default function App() {
         <Route path="repairs" element={<Repairs />} />
         <Route path="repairs/new" element={<RequireAccess action="intake"><NewRepair /></RequireAccess>} />
         <Route path="repairs/:id" element={<RepairDetail />} />
+        <Route path="customers" element={<RequireAccess action="money"><Customers /></RequireAccess>} />
         <Route path="finance" element={<RequireAccess action="finance"><Finance /></RequireAccess>} />
         <Route path="sms" element={<RequireAccess action="sms"><BulkSms /></RequireAccess>} />
         <Route path="staff" element={<RequireAccess action="staff"><Staff /></RequireAccess>} />

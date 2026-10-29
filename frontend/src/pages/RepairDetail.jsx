@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api.js";
 import { useAuth } from "../auth.jsx";
-import { Notice, PageHeader, ProgressBar, Spinner, StatusBadge } from "../components/ui.jsx";
+import { Notice, PageHeader, ProgressBar, Spinner, StatusBadge, TierBadge } from "../components/ui.jsx";
 import { PAYMENT_METHODS, PART_SOURCES, fmt, methodLabel, money, toAmount } from "../lib.js";
 
 const emptyPart = { name: "", quantity: 1, source: "stock", unit_cost: "", unit_price: "" };
@@ -58,6 +58,7 @@ function PartRow({ part, showMoney, locked, run }) {
 
 export default function RepairDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { user, can } = useAuth();
   const showMoney = can("money");
   const isAdmin = user.role === "admin";
@@ -104,6 +105,23 @@ export default function RepairDetail() {
   const m = repair.money;
   const locked = repair.status === "collected" && !isAdmin;
 
+  async function deleteRepair() {
+    const owed = m ? ` (${money(m.paid)} received)` : "";
+    const ok = window.confirm(
+      `Permanently delete repair ${repair.ticket_code}?\n\nThis also deletes its ${repair.parts.length} part(s) and ${repair.payments.length} payment(s)${owed}, ` +
+      "and will change your finance reports. This cannot be undone."
+    );
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await api(`/repairs/${id}`, { method: "DELETE" });
+      navigate("/repairs", { state: { flash: { type: "ok", text: `Repair ${repair.ticket_code} deleted.` } } });
+    } catch (ex) {
+      setNote({ type: "err", text: ex.message });
+      setBusy(false);
+    }
+  }
+
   async function addPart(e) {
     e.preventDefault();
     const body = { name: part.name, quantity: Number(part.quantity) || 1, source: part.source };
@@ -122,15 +140,26 @@ export default function RepairDetail() {
 
   return (
     <>
-      <PageHeader title={`${repair.brand} ${repair.model}`} subtitle={`${repair.customer_name} · ${repair.service_type} · IMEI ${repair.imei}`}>
+      <PageHeader
+        title={`${repair.brand} ${repair.model}`}
+        subtitle={`${repair.customer_name}${repair.customer_phone ? ` · ${repair.customer_phone}` : ""} · ${repair.service_type} · IMEI ${repair.imei}`}
+      >
         <Link to="/repairs" className="btn ghost">← All repairs</Link>
+        {isAdmin && <button className="btn danger" disabled={busy} onClick={deleteRepair}>Delete repair</button>}
       </PageHeader>
       <Notice n={note} />
+      {repair.failure_reason && (
+        <Notice n={{ type: "warn", text: `Could not be fully repaired: ${repair.failure_reason}${repair.failure_by ? ` (${repair.failure_by})` : ""}` }} />
+      )}
       {locked && <Notice n={{ type: "warn", text: "This repair has been collected, so its parts and price are locked. An administrator can still change them." }} />}
 
       <div className="card">
         <div className="row spread" style={{ marginBottom: 8 }}>
-          <span><span className="badge">{repair.ticket_code}</span> &nbsp;<StatusBadge status={repair.status} /></span>
+          <span>
+            <span className="badge">{repair.ticket_code}</span> &nbsp;<StatusBadge status={repair.status} />{" "}
+            <TierBadge tier={repair.customer_tier} points={repair.customer_points} />
+            {repair.customer_visits > 0 && <span className="sub"> {repair.customer_visits} previous visit{repair.customer_visits === 1 ? "" : "s"}</span>}
+          </span>
           <span className="muted small">Registered {fmt(repair.created_at)} · Technician: {repair.assigned_to || "unassigned"}</span>
         </div>
         <ProgressBar value={repair.progress} />

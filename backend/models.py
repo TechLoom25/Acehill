@@ -20,6 +20,7 @@ class Status(str, Enum):
     waiting_parts = "waiting_parts"
     repairing = "repairing"
     ready = "ready"
+    incomplete = "incomplete"  # technician could not fully repair it; a reason is required
     collected = "collected"
 
 
@@ -83,6 +84,8 @@ class Repair(SQLModel, table=True):
     estimated_completion: Optional[datetime] = None
     service_fee: int = 0  # labour / service charge in whole KES (parts are charged separately)
     collected_at: Optional[datetime] = None
+    failure_reason: str = ""  # why it could not be completely repaired (status "incomplete")
+    failure_by: str = ""
     created_at: datetime = Field(default_factory=now_utc)
     updated_at: datetime = Field(default_factory=now_utc)
 
@@ -212,6 +215,7 @@ class RepairUpdate(BaseModel):
     estimated_completion: Optional[datetime] = None
     assigned_to: Optional[str] = PField(None, max_length=80)
     service_fee: Optional[int] = PField(None, ge=0, le=MAX_AMOUNT)
+    reason: Optional[str] = PField(None, max_length=1000)  # required when status becomes "incomplete"
     notify: bool = True  # send SMS on status change
 
 
@@ -282,6 +286,10 @@ class RepairOut(BaseModel):
     id: int
     ticket_code: str
     customer_name: str
+    customer_phone: Optional[str] = None  # hidden from technicians
+    customer_tier: str = "New"
+    customer_points: int = 0
+    customer_visits: int = 0
     imei: str
     brand: str
     model: str
@@ -294,6 +302,8 @@ class RepairOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     collected_at: Optional[datetime] = None
+    failure_reason: str = ""
+    failure_by: str = ""
     money: Optional[MoneyOut] = None  # null for technicians
     sms_sent: Optional[bool] = None  # only set when a request tried to send an SMS
 
@@ -306,3 +316,24 @@ class RepairDetail(RepairOut):
 class BulkSMS(BaseModel):
     message: str = PField(min_length=1, max_length=1000)
     phones: Optional[list[str]] = None  # None = all customers
+
+
+class CustomerOut(BaseModel):
+    id: int
+    name: str
+    phone: str
+    created_at: datetime
+    repairs: int  # every repair ever registered
+    visits: int  # repairs successfully completed and collected
+    points: int
+    tier: str
+    total_spent: int
+    last_visit: Optional[datetime] = None
+
+
+class CustomerLookup(BaseModel):
+    found: bool
+    name: Optional[str] = None
+    visits: int = 0
+    points: int = 0
+    tier: str = "New"

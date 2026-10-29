@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api.js";
-import { Notice, PageHeader } from "../components/ui.jsx";
+import { Notice, PageHeader, TierBadge } from "../components/ui.jsx";
 import StaffDatalist from "../components/StaffDatalist.jsx";
 import { PAYMENT_METHODS, SERVICE_TYPES, money, toAmount } from "../lib.js";
 
@@ -15,7 +15,28 @@ export default function NewRepair() {
   const [f, setF] = useState(empty);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [known, setKnown] = useState(null); // saved customer matching the phone number typed
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+
+  // Look the number up as it is typed and fill in the saved name.
+  useEffect(() => {
+    const phone = f.phone.trim();
+    if (phone.replace(/\D/g, "").length < 9) {
+      setKnown(null);
+      return;
+    }
+    let alive = true;
+    const t = setTimeout(() => {
+      api(`/customers/lookup?phone=${encodeURIComponent(phone)}`)
+        .then((r) => {
+          if (!alive) return;
+          setKnown(r.found ? r : null);
+          if (r.found) setF((cur) => (cur.name.trim() ? cur : { ...cur, name: r.name }));
+        })
+        .catch(() => alive && setKnown(null));
+    }, 350);
+    return () => { alive = false; clearTimeout(t); };
+  }, [f.phone]);
 
   async function submit(e) {
     e.preventDefault();
@@ -47,6 +68,14 @@ export default function NewRepair() {
           <label>Customer name<input value={f.name} onChange={set("name")} required /></label>
           <label>Phone number<input value={f.phone} onChange={set("phone")} placeholder="0712 345 678" inputMode="tel" required minLength={5} /></label>
         </div>
+        {known && (
+          <div className="msg ok">
+            {known.visits > 0 ? "Returning customer" : "Known customer"}: <strong>{known.name}</strong>{" "}
+            <TierBadge tier={known.tier} points={known.points} />{" "}
+            {known.visits > 0 ? `· ${known.visits} completed visit${known.visits === 1 ? "" : "s"} · ${known.points} points` : "· no completed visits yet"}
+            {f.name.trim() && f.name.trim().toLowerCase() !== known.name.toLowerCase() && <div className="sub">Saved under the name "{known.name}"; the existing record is kept.</div>}
+          </div>
+        )}
 
         <h2>Device & service</h2>
         <div className="grid">

@@ -11,6 +11,7 @@ const ICONS = {
   search: ["M19 11a8 8 0 1 1-16 0 8 8 0 0 1 16 0z", "M21 21l-4.35-4.35"],
   menu: ["M3 12h18", "M3 6h18", "M3 18h18"],
   close: ["M18 6L6 18", "M6 6l12 12"],
+  star: ["M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"],
   chart: ["M18 20V10", "M12 20V4", "M6 20v-6"],
   track: ["M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z", "M15 10a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"],
 };
@@ -26,6 +27,16 @@ export function Icon({ name, size = 18 }) {
 
 export function Notice({ n }) {
   return n ? <div className={`msg ${n.type}`} role={n.type === "err" ? "alert" : "status"}>{n.text}</div> : null;
+}
+
+/** Loyalty tier chip. Hidden for brand-new customers unless showNew is set. */
+export function TierBadge({ tier, points, showNew = false }) {
+  if (!tier || (tier === "New" && !showNew)) return null;
+  return (
+    <span className={`badge tier-${tier.toLowerCase()}`} title={points != null ? `${points} experience points` : undefined}>
+      {tier === "New" ? "New" : `★ ${tier}`}
+    </span>
+  );
 }
 
 export const StatusBadge = ({ status }) => <span className={`badge st-${status}`}>{statusLabel(status)}</span>;

@@ -1,4 +1,6 @@
 """Staff account management (administrators only) and the staff directory."""
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
@@ -8,6 +10,7 @@ from models import Role, StaffMember, User, UserCreate, UserPublic, UserUpdate
 from security import current_user, hash_password, require_roles
 
 router = APIRouter(tags=["staff"])
+audit = logging.getLogger("acehill.audit")
 admin_only = require_roles()  # admins always pass; nobody else is listed
 
 
@@ -68,3 +71,20 @@ def update_user(
     session.commit()
     session.refresh(user)
     return user
+
+
+@router.delete("/users/{user_id}")
+def delete_user(user_id: int, session: Session = Depends(get_session), admin: User = Depends(admin_only)):
+    """Permanently remove a staff account. (Disabling keeps the account and is reversible.)
+
+    Repairs, parts and payments only store the staff member's *name*, so no records are lost or broken.
+    """
+    if user_id == admin.id:
+        raise HTTPException(400, "You can't delete your own account.")
+    user = session.get(User, user_id)
+    if user is None:
+        raise HTTPException(404, "User not found.")
+    session.delete(user)
+    session.commit()
+    audit.warning("staff account %s (%s) deleted by %s", user.username, user.full_name, admin.username)
+    return {"ok": True}

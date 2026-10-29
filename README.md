@@ -34,9 +34,28 @@ administrator. After that, sign in normally and add staff under **Staff**.
 | List parts on a repair   |   ✓   |    ✓    |     ✓      |     ✓      |
 | See prices, enter part costs, take payments | ✓ | ✓ | ✓ |        |
 | Finance report & profit  |   ✓   |         |            |            |
-| Delete a payment         |   ✓   |         |            |            |
+| Delete a payment, repair or staff account | ✓ | | | |
 | Bulk SMS                 |   ✓   |    ✓    |            |            |
 | Manage staff accounts    |   ✓   |         |            |            |
+
+## Customers & loyalty
+
+Customers earn **experience points** from completed visits: 10 per visit plus 1 for every KES 100 billed.
+Tiers: Returning (10+), Silver (100+), Gold (300+), Platinum (600+). Points are calculated from history, never stored,
+so they cannot drift. Repairs marked "could not complete" earn nothing. Typing a phone number on the New repair form
+looks up the saved customer and fills in the name. Tune the rules in `backend/loyalty.py`.
+
+## Repairs that can't be completed
+
+Any staff member can set a repair to **Could not complete**; a written reason is mandatory. The reason is internal
+(never shown on the public tracking page) and is kept when the customer collects the phone. Moving the job back to
+work clears it.
+
+## Deleting
+
+Administrators can permanently delete staff accounts, repairs (with their parts and payments) and payments. Deletions
+are written to the server log (`journalctl -u acehill-backend | grep audit`). Prefer *disabling* a staff account if you
+may need it again.
 
 ## Money
 

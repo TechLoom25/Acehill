@@ -8,6 +8,7 @@ const NAV = [
   { to: "/", label: "Dashboard", icon: "dashboard", active: (p) => p === "/" },
   { to: "/repairs", label: "Repairs", icon: "wrench", active: (p) => p.startsWith("/repairs") && p !== "/repairs/new" },
   { to: "/repairs/new", label: "New repair", icon: "plus", access: "intake", active: (p) => p === "/repairs/new" },
+  { to: "/customers", label: "Customers", icon: "star", access: "money", active: (p) => p.startsWith("/customers") },
   { to: "/finance", label: "Finance", icon: "chart", access: "finance", active: (p) => p.startsWith("/finance") },
   { to: "/sms", label: "Bulk SMS", icon: "message", access: "sms", active: (p) => p.startsWith("/sms") },
   { to: "/staff", label: "Staff", icon: "users", access: "staff", active: (p) => p.startsWith("/staff") },

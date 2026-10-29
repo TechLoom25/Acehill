@@ -1,4 +1,5 @@
-"""Repairs, customers, SMS, public tracking and the dashboard."""
+"""Repairs, SMS, public tracking and the dashboard."""
+import logging
 import secrets
 from datetime import timedelta
 from typing import Optional
@@ -30,18 +31,22 @@ from security import current_user, require_roles
 from sms import send_sms, try_send_sms
 
 router = APIRouter(tags=["shop"])
+audit = logging.getLogger("acehill.audit")  # shows up in: journalctl -u acehill-backend
 
 can_intake = require_roles(Role.manager, Role.front_desk)
-can_view_customers = require_roles(Role.manager, Role.front_desk)
 can_bulk_sms = require_roles(Role.manager)
+admin_only = require_roles()
 
 STATUS_MESSAGES = {
     Status.diagnosing: "is being diagnosed",
     Status.waiting_parts: "is waiting for parts",
     Status.repairing: "is now being repaired",
     Status.ready: "is READY for pickup",
+    Status.incomplete: "could not be fully repaired. Please contact or visit us",
     Status.collected: "has been collected. Thank you!",
 }
+# Moving back to any of these means the "could not complete" note no longer applies.
+_RESUMED = (*OPEN_STATUSES, Status.ready)
 
 
 # ---------- repairs ----------
@@ -89,7 +94,7 @@ def register_repair(form: IntakeForm, session: Session = Depends(get_session), u
         f"Hi {customer.name}, Acehill Repair has received your {repair.brand} "
         f"{repair.model}. Ticket: {repair.ticket_code}.",
     )
-    return build_repair_outs(session, user, [(repair, customer.name)], sms_sent=sent)[0]
+    return build_repair_outs(session, user, [(repair, customer)], sms_sent=sent)[0]
 
 
 @router.get("/repairs", response_model=list[RepairOut])
@@ -101,7 +106,7 @@ def list_repairs(
     user: User = Depends(current_user),
 ):
     stmt = (
-        select(Repair, Customer.name)
+        select(Repair, Customer)
         .join(Customer, Customer.id == Repair.customer_id)
         .order_by(col(Repair.created_at).desc())
         .limit(limit)
@@ -119,7 +124,7 @@ def list_repairs(
                 col(Customer.name).icontains(term, autoescape=True),
             )
         )
-    return build_repair_outs(session, user, [(r, name) for r, name in session.exec(stmt).all()])
+    return build_repair_outs(session, user, list(session.exec(stmt).all()))
 
 
 @router.get("/repairs/{repair_id}", response_model=RepairDetail)
@@ -128,7 +133,7 @@ def repair_detail(repair_id: int, session: Session = Depends(get_session), user:
     if repair is None:
         raise HTTPException(404, "Repair not found.")
     customer = session.get(Customer, repair.customer_id)
-    base = build_repair_outs(session, user, [(repair, customer.name)])[0]
+    base = build_repair_outs(session, user, [(repair, customer)])[0]
     parts = session.exec(select(Part).where(Part.repair_id == repair.id).order_by(col(Part.created_at))).all()
     payments = (
         session.exec(select(Payment).where(Payment.repair_id == repair.id).order_by(col(Payment.created_at))).all()
@@ -153,7 +158,7 @@ def update_repair(
     if repair is None:
         raise HTTPException(404, "Repair not found.")
 
-    data = upd.model_dump(exclude_unset=True, exclude={"notify"})
+    data = upd.model_dump(exclude_unset=True, exclude={"notify", "reason"})
     for key in ("status", "progress", "assigned_to", "service_fee"):  # these columns are not nullable
         if key in data and data[key] is None:
             del data[key]
@@ -167,6 +172,18 @@ def update_repair(
         data["estimated_completion"] = eta.replace(tzinfo=now_utc().tzinfo)
 
     old_status = repair.status
+    new_status = data.get("status", old_status)
+
+    # A repair that could not be completed must say why.
+    if new_status == Status.incomplete:
+        reason = (upd.reason or "").strip() or repair.failure_reason
+        if not reason:
+            raise HTTPException(422, "Please explain why the repair could not be completed.")
+        if reason != repair.failure_reason:
+            repair.failure_reason, repair.failure_by = reason, user.full_name
+    elif old_status == Status.incomplete and new_status in _RESUMED:
+        repair.failure_reason = repair.failure_by = ""  # work resumed; the old note is stale
+
     for key, value in data.items():
         setattr(repair, key, value)
     if repair.status != old_status:
@@ -187,13 +204,33 @@ def update_repair(
             f"Acehill Repair: your {repair.brand} {repair.model} "
             f"{STATUS_MESSAGES[repair.status]}. Ticket {repair.ticket_code}.",
         )
-    return build_repair_outs(session, user, [(repair, customer.name)], sms_sent=sent)[0]
+    return build_repair_outs(session, user, [(repair, customer)], sms_sent=sent)[0]
+
+
+@router.delete("/repairs/{repair_id}")
+def delete_repair(repair_id: int, session: Session = Depends(get_session), admin: User = Depends(admin_only)):
+    """Administrators only. Removes the repair with its parts and payments, which also changes finance reports."""
+    repair = session.get(Repair, repair_id)
+    if repair is None:
+        raise HTTPException(404, "Repair not found.")
+    parts = session.exec(select(Part).where(Part.repair_id == repair_id)).all()
+    payments = session.exec(select(Payment).where(Payment.repair_id == repair_id)).all()
+    received = sum(p.amount for p in payments)
+    for row in (*parts, *payments):
+        session.delete(row)
+    session.delete(repair)
+    session.commit()
+    audit.warning(
+        "repair %s deleted by %s (%s): %d part(s), %d payment(s) totalling KES %d",
+        repair.ticket_code, admin.username, admin.full_name, len(parts), len(payments), received,
+    )
+    return {"ok": True, "parts": len(parts), "payments": len(payments)}
 
 
 # ---------- public tracking ----------
 @router.get("/track/{ticket_code}")
 def track(ticket_code: str, session: Session = Depends(get_session)):
-    """Public: customer checks progress. Returns no personal or financial data."""
+    """Public: customer checks progress. Returns no personal, financial or internal-note data."""
     r = session.exec(select(Repair).where(Repair.ticket_code == ticket_code.strip().upper())).first()
     if r is None:
         raise HTTPException(404, "Ticket not found.")
@@ -207,12 +244,7 @@ def track(ticket_code: str, session: Session = Depends(get_session)):
     }
 
 
-# ---------- customers & SMS ----------
-@router.get("/customers")
-def list_customers(session: Session = Depends(get_session), _: User = Depends(can_view_customers)):
-    return session.exec(select(Customer).order_by(Customer.name)).all()
-
-
+# ---------- bulk SMS ----------
 @router.post("/sms/bulk")
 def bulk_sms(body: BulkSMS, session: Session = Depends(get_session), _: User = Depends(can_bulk_sms)):
     known = [c.phone for c in session.exec(select(Customer)).all()]
@@ -263,17 +295,21 @@ def dashboard(session: Session = Depends(get_session), user: User = Depends(curr
     ]
 
     rows = session.exec(
-        select(Repair, Customer.name)
+        select(Repair, Customer)
         .join(Customer, Customer.id == Repair.customer_id)
         .order_by(col(Repair.created_at).desc())
         .limit(6)
     ).all()
-    recent = build_repair_outs(session, user, [(r, name) for r, name in rows])
+    recent = build_repair_outs(session, user, list(rows))
 
     to_buy = session.exec(
         select(Part, Repair.ticket_code, Repair.brand, Repair.model)
         .join(Repair, Repair.id == Part.repair_id)
-        .where(Part.source == PartSource.purchase, Part.acquired == False, Repair.status != Status.collected)  # noqa: E712
+        .where(
+            Part.source == PartSource.purchase,
+            Part.acquired == False,  # noqa: E712
+            col(Repair.status).notin_((Status.collected, Status.incomplete)),
+        )
         .order_by(col(Part.created_at))
     ).all()
     parts_to_buy = [
@@ -284,6 +320,7 @@ def dashboard(session: Session = Depends(get_session), user: User = Depends(curr
     return {
         "open": sum(by_status[s.value] for s in OPEN_STATUSES),
         "ready": by_status[Status.ready.value],
+        "incomplete": by_status[Status.incomplete.value],
         "overdue": overdue,
         "new_this_week": new_week,
         "completed_this_week": done_week,

@@ -4,6 +4,7 @@ export const STATUSES = [
   ["waiting_parts", "Waiting for parts"],
   ["repairing", "Repairing"],
   ["ready", "Ready for pickup"],
+  ["incomplete", "Could not complete"],
   ["collected", "Collected"],
 ];
 export const statusLabel = (s) => STATUSES.find(([v]) => v === s)?.[1] ?? s;
@@ -84,3 +85,6 @@ export const greeting = () => {
   const h = new Date().getHours();
   return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
 };
+
+/** Mirrors backend/loyalty.py (shown to staff as help text only; the API computes the real numbers). */
+export const POINTS_HELP = "10 points per completed visit + 1 point for every KES 100 billed. Returning 10+, Silver 100+, Gold 300+, Platinum 600+.";
