@@ -210,3 +210,14 @@ def test_postgres_enum_gets_the_new_status(monkeypatch):
     SQLModel.metadata.drop_all(eng)
     with eng.begin() as c:
         c.execute(text("DROP TYPE IF EXISTS status CASCADE"))
+
+
+# ---------- optional IMEI ----------
+def test_imei_is_optional(client, admin, sent_sms):
+    body = {k: v for k, v in INTAKE.items() if k != "imei"}
+    missing = client.post("/repairs", headers=admin, json=body)
+    blank = client.post("/repairs", headers=admin, json={**body, "phone": "0722000000", "imei": "   "})
+    given = client.post("/repairs", headers=admin, json={**body, "phone": "0733000000", "imei": "356938035643809"})
+    assert (missing.status_code, blank.status_code, given.status_code) == (201, 201, 201)
+    assert missing.json()["imei"] == "" and blank.json()["imei"] == "" and given.json()["imei"] == "356938035643809"
+    assert len(client.get("/repairs?q=356938", headers=admin).json()) == 1  # searching by IMEI still works

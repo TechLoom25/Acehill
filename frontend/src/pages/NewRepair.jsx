@@ -79,7 +79,7 @@ export default function NewRepair() {
 
         <h2>Device & service</h2>
         <div className="grid">
-          <label>IMEI number<input value={f.imei} onChange={set("imei")} inputMode="numeric" required /></label>
+          <label>IMEI number (optional)<input value={f.imei} onChange={set("imei")} inputMode="numeric" maxLength={40} /></label>
           <label>Brand<input value={f.brand} onChange={set("brand")} placeholder="Samsung" required /></label>
           <label>Model<input value={f.model} onChange={set("model")} placeholder="Galaxy A14" required /></label>
           <label>Type of service

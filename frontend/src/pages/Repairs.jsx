@@ -6,7 +6,7 @@ import { Icon, Notice, PageHeader, ProgressBar, Spinner, TierBadge } from "../co
 import StaffDatalist from "../components/StaffDatalist.jsx";
 import { STATUSES, money, toLocalInput } from "../lib.js";
 
-function RepairRow({ r, showMoney, onSaved, onError }) {
+function RepairRow({ r, showMoney, isAdmin, onSaved, onDeleted, onError }) {
   const initial = {
     status: r.status,
     progress: r.progress,
@@ -46,6 +46,23 @@ function RepairRow({ r, showMoney, onSaved, onError }) {
     }
   }
 
+  async function remove() {
+    const paid = r.money?.paid ? ` It has ${money(r.money.paid)} in recorded payments.` : "";
+    const ok = window.confirm(
+      `Permanently delete repair ${r.ticket_code} (${r.brand} ${r.model})?\n\nIts parts and payments are deleted too.${paid} ` +
+      "This changes your finance reports and cannot be undone."
+    );
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await api(`/repairs/${r.id}`, { method: "DELETE" });
+      onDeleted(r);
+    } catch (ex) {
+      onError(ex.message);
+      setBusy(false);
+    }
+  }
+
   return (
     <tr>
       <td><span className="badge">{r.ticket_code}</span></td>
@@ -54,7 +71,7 @@ function RepairRow({ r, showMoney, onSaved, onError }) {
         <div className="sub">
           {r.customer_name} <TierBadge tier={r.customer_tier} points={r.customer_points} /> · {r.service_type}
         </div>
-        <div className="sub">{r.customer_phone ? `${r.customer_phone} · ` : ""}IMEI {r.imei}</div>
+        <div className="sub">{[r.customer_phone, r.imei && `IMEI ${r.imei}`].filter(Boolean).join(" · ")}</div>
       </td>
       {showMoney && (
         <td>
@@ -86,14 +103,20 @@ function RepairRow({ r, showMoney, onSaved, onError }) {
       </td>
       <td><input type="datetime-local" value={d.eta} aria-label="Ready by" onChange={(e) => setD({ ...d, eta: e.target.value })} /></td>
       <td><input list="staff-names" value={d.assigned_to} aria-label="Technician" onChange={(e) => setD({ ...d, assigned_to: e.target.value })} /></td>
-      <td><button className="btn sm" disabled={!canSave || busy} onClick={save}>{busy ? "…" : "Save"}</button></td>
+      <td>
+        <div className="actions">
+          <button className="btn sm" disabled={!canSave || busy} onClick={save}>{busy ? "…" : "Save"}</button>
+          {isAdmin && <button className="btn danger sm" disabled={busy} onClick={remove} title="Delete this repair">Delete</button>}
+        </div>
+      </td>
     </tr>
   );
 }
 
 export default function Repairs() {
-  const { can } = useAuth();
+  const { user, can } = useAuth();
   const showMoney = can("money");
+  const isAdmin = user.role === "admin";
   const [rows, setRows] = useState(null);
   const [status, setStatus] = useState("");
   const [query, setQuery] = useState("");
@@ -127,6 +150,11 @@ export default function Repairs() {
     });
   }
 
+  function deleted(r) {
+    setRows((rs) => rs.filter((x) => x.id !== r.id));
+    setNote({ type: "ok", text: `Repair ${r.ticket_code} deleted.` });
+  }
+
   return (
     <>
       <PageHeader title="Repairs" subtitle="Update status and progress. Changing the status texts the customer.">
@@ -152,7 +180,7 @@ export default function Repairs() {
               <thead><tr><th>Ticket</th><th>Device</th>{showMoney && <th>Charges</th>}<th>Status</th><th>Progress %</th><th>Ready by</th><th>Technician</th><th /></tr></thead>
               <tbody>
                 {rows.map((r) => (
-                  <RepairRow key={`${r.id}-${r.updated_at}`} r={r} showMoney={showMoney} onSaved={saved} onError={(text) => setNote({ type: "err", text })} />
+                  <RepairRow key={`${r.id}-${r.updated_at}`} r={r} showMoney={showMoney} isAdmin={isAdmin} onSaved={saved} onDeleted={deleted} onError={(text) => setNote({ type: "err", text })} />
                 ))}
                 {!rows.length && <tr><td colSpan={showMoney ? 8 : 7} className="muted">No repairs match.</td></tr>}
               </tbody>

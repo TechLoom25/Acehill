@@ -142,7 +142,7 @@ export default function RepairDetail() {
     <>
       <PageHeader
         title={`${repair.brand} ${repair.model}`}
-        subtitle={`${repair.customer_name}${repair.customer_phone ? ` · ${repair.customer_phone}` : ""} · ${repair.service_type} · IMEI ${repair.imei}`}
+        subtitle={`${repair.customer_name}${repair.customer_phone ? ` · ${repair.customer_phone}` : ""} · ${repair.service_type}${repair.imei ? ` · IMEI ${repair.imei}` : ""}`}
       >
         <Link to="/repairs" className="btn ghost">← All repairs</Link>
         {isAdmin && <button className="btn danger" disabled={busy} onClick={deleteRepair}>Delete repair</button>}

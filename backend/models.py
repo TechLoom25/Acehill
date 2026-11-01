@@ -193,7 +193,7 @@ class IntakeForm(BaseModel):
 
     name: str = PField(min_length=1, max_length=120)
     phone: str = PField(min_length=5, max_length=20)
-    imei: str = PField(min_length=1, max_length=40)
+    imei: str = PField("", max_length=40)  # optional: not every device has one to hand
     brand: str = PField(min_length=1, max_length=60)
     model: str = PField(min_length=1, max_length=60)
     service_type: str = PField(min_length=1, max_length=60)
