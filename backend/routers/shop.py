@@ -1,7 +1,6 @@
 """Repairs, SMS, public tracking and the dashboard."""
 import logging
 import secrets
-from datetime import timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -29,6 +28,7 @@ from models import (
 )
 from security import current_user, require_roles
 from sms import send_sms, try_send_sms
+from timeutil import week_start
 
 router = APIRouter(tags=["shop"])
 audit = logging.getLogger("acehill.audit")  # shows up in: journalctl -u acehill-backend
@@ -43,7 +43,7 @@ STATUS_MESSAGES = {
     Status.repairing: "is now being repaired",
     Status.ready: "is READY for pickup",
     Status.incomplete: "could not be fully repaired. Please contact or visit us",
-    Status.collected: "has been collected. Thank you!",
+    Status.collected: "has been collected, thank you",
 }
 # Moving back to any of these means the "could not complete" note no longer applies.
 _RESUMED = (*OPEN_STATUSES, Status.ready)
@@ -64,7 +64,13 @@ def register_repair(form: IntakeForm, session: Session = Depends(get_session), u
         candidate = Repair(
             ticket_code=secrets.token_hex(3).upper(),
             customer_id=customer.id,
-            **form.model_dump(exclude={"name", "phone", "deposit_amount", "deposit_method"}),
+            service_type=form.service_type or ("Part replacement" if form.needs_part else "Service only"),
+            **form.model_dump(
+                exclude={
+                    "name", "phone", "deposit_amount", "deposit_method",
+                    "needs_part", "part_name", "part_source", "service_type",
+                }
+            ),
         )
         session.add(candidate)
         try:
@@ -76,6 +82,18 @@ def register_repair(form: IntakeForm, session: Session = Depends(get_session), u
     if repair is None:
         raise HTTPException(500, "Could not allocate a ticket code. Please try again.")
     session.refresh(repair)
+
+    if form.needs_part:
+        session.add(
+            Part(
+                repair_id=repair.id,
+                name=form.part_name,
+                source=form.part_source,
+                acquired=form.part_source == PartSource.stock,
+                added_by=user.full_name,
+            )
+        )
+        session.commit()
 
     if form.deposit_amount > 0:
         session.add(
@@ -266,7 +284,7 @@ def bulk_sms(body: BulkSMS, session: Session = Depends(get_session), _: User = D
 @router.get("/dashboard")
 def dashboard(session: Session = Depends(get_session), user: User = Depends(current_user)):
     now = now_utc()
-    week_ago = now - timedelta(days=7)
+    week_ago = week_start(now)  # Monday 00:00 shop time: same "this week" as the finance page
 
     by_status = {s.value: 0 for s in Status}
     for status_, count in session.exec(select(Repair.status, func.count(Repair.id)).group_by(Repair.status)).all():

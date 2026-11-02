@@ -4,7 +4,7 @@ import { api } from "../api.js";
 import { useAuth } from "../auth.jsx";
 import { Icon, Notice, PageHeader, ProgressBar, Spinner, TierBadge } from "../components/ui.jsx";
 import StaffDatalist from "../components/StaffDatalist.jsx";
-import { STATUSES, money, toLocalInput } from "../lib.js";
+import { STATUSES, fromLocalInput, money, toLocalInput } from "../lib.js";
 
 function RepairRow({ r, showMoney, isAdmin, onSaved, onDeleted, onError }) {
   const initial = {
@@ -35,7 +35,7 @@ function RepairRow({ r, showMoney, isAdmin, onSaved, onDeleted, onError }) {
           status: d.status,
           progress: Math.min(100, Math.max(0, Number(d.progress) || 0)),
           assigned_to: d.assigned_to,
-          estimated_completion: d.eta ? new Date(d.eta).toISOString() : null,
+          estimated_completion: d.eta ? fromLocalInput(d.eta) : null,
           reason: needsReason ? d.reason.trim() : undefined,
         },
       });

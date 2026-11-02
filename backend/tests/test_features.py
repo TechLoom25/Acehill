@@ -221,3 +221,100 @@ def test_imei_is_optional(client, admin, sent_sms):
     assert (missing.status_code, blank.status_code, given.status_code) == (201, 201, 201)
     assert missing.json()["imei"] == "" and blank.json()["imei"] == "" and given.json()["imei"] == "356938035643809"
     assert len(client.get("/repairs?q=356938", headers=admin).json()) == 1  # searching by IMEI still works
+
+
+# ---------- simplified registration ----------
+QUICK = {"name": "Amina", "phone": "0712345678", "brand": "Samsung", "model": "Galaxy A14"}
+
+
+def test_register_service_only_needs_no_money_or_service_type(client, admin, sent_sms):
+    r = client.post("/repairs", headers=admin, json=QUICK)
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["service_type"] == "Service only" and body["imei"] == ""
+    assert body["money"]["total"] == 0 and body["money"]["paid"] == 0
+    assert client.get(f"/repairs/{body['id']}", headers=admin).json()["parts"] == []
+
+
+def test_register_with_a_part_creates_the_part_line(client, admin, make_staff, sent_sms):
+    desk = make_staff("dina", "front_desk")
+    buy = client.post("/repairs", headers=desk, json={**QUICK, "needs_part": True, "part_name": "A14 screen", "part_source": "purchase"})
+    shop = client.post("/repairs", headers=desk, json={**QUICK, "phone": "0722000000", "needs_part": True, "part_name": "Charging port", "part_source": "stock"})
+    assert buy.status_code == shop.status_code == 201
+    assert buy.json()["service_type"] == "Part replacement"
+
+    part = client.get(f"/repairs/{buy.json()['id']}", headers=admin).json()["parts"][0]
+    assert (part["name"], part["source"], part["acquired"], part["added_by"]) == ("A14 screen", "purchase", False, "Dina")
+    assert client.get(f"/repairs/{shop.json()['id']}", headers=admin).json()["parts"][0]["acquired"] is True
+    stats = client.get("/dashboard", headers=admin).json()
+    assert [p["name"] for p in stats["parts_to_buy"]] == ["A14 screen"]  # only the one that must be bought
+
+
+def test_a_needed_part_must_be_named(client, admin):
+    r = client.post("/repairs", headers=admin, json={**QUICK, "needs_part": True, "part_name": "  "})
+    assert r.status_code == 422 and "part" in r.text.lower()
+
+
+# ---------- end-of-day report ----------
+def test_end_of_day_summary_lists_jobs_with_service_and_parts(client, admin, sent_sms):
+    a = client.post("/repairs", headers=admin, json={**QUICK, "service_fee": 500}).json()["id"]  # service only
+    b = client.post("/repairs", headers=admin, json={**QUICK, "phone": "0722000000", "name": "Brian", "needs_part": True,
+                                                       "part_name": "Screen", "service_fee": 500}).json()["id"]
+    part = client.get(f"/repairs/{b}", headers=admin).json()["parts"][0]
+    client.patch(f"/parts/{part['id']}", headers=admin, json={"unit_cost": 3000})
+    for rid in (a, b):
+        client.patch(f"/repairs/{rid}", headers=admin, json={"status": "collected"})
+
+    r = client.get("/reports/finance?period=today", headers=admin).json()
+    assert (r["service_income"], r["parts_cost"], r["parts_revenue"], r["profit"]) == (1000, 3000, 3000, 1000)
+    assert (r["repairs_collected"], r["service_only_jobs"], r["jobs_with_parts"]) == (2, 1, 1)
+    assert len(r["daily"]) == 1 and r["daily"][0]["service"] == 1000 and r["daily"][0]["parts_cost"] == 3000
+    jobs = {j["customer"]: j for j in r["jobs"]}
+    assert jobs["Brian"]["parts_cost"] == 3000 and jobs["Brian"]["profit"] == 500 and jobs["Brian"]["had_parts"]
+    assert jobs["Amina"]["parts_cost"] == 0 and jobs["Amina"]["service"] == 500 and not jobs["Amina"]["had_parts"]
+
+
+def test_payment_just_after_midnight_in_nairobi_counts_for_that_day(client, admin, sent_sms):
+    """00:30 Nairobi is 21:30 the previous day in UTC. The report must use shop time."""
+    from datetime import timedelta
+
+    from database import get_session
+    from main import app
+    from models import Payment
+    from timeutil import period_bounds, shop_tz
+    from models import now_utc
+
+    rid = client.post("/repairs", headers=admin, json=QUICK).json()["id"]
+    today_start_utc, _ = period_bounds("today", now_utc(), shop_tz())
+    session = next(app.dependency_overrides[get_session]())
+    session.add(Payment(repair_id=rid, amount=700, created_at=today_start_utc + timedelta(minutes=30)))
+    session.add(Payment(repair_id=rid, amount=900, created_at=today_start_utc - timedelta(minutes=30)))  # yesterday
+    session.commit()
+
+    r = client.get("/reports/finance?period=today", headers=admin).json()
+    assert r["cash_received"] == 700 and r["daily"][0]["cash"] == 700
+    assert r["daily"][0]["date"] == today_start_utc.astimezone(shop_tz()).date().isoformat()
+
+
+def test_dashboard_week_uses_the_same_monday_week_as_finance():
+    from datetime import datetime, timezone
+
+    from timeutil import week_start
+
+    wed = datetime(2026, 10, 28, 9, 0, tzinfo=timezone.utc)  # Wednesday morning
+    assert week_start(wed) == datetime(2026, 10, 25, 21, 0, tzinfo=timezone.utc)  # Mon 26 Oct 00:00 Nairobi
+    sun_night = datetime(2026, 11, 1, 20, 59, tzinfo=timezone.utc)  # still Sunday 23:59 Nairobi
+    assert week_start(sun_night) == datetime(2026, 10, 25, 21, 0, tzinfo=timezone.utc)
+
+
+def test_server_announces_the_shop_timezone_and_sends_utc_dates(client, admin, sent_sms):
+    assert client.get("/auth/setup-status").json()["timezone"] == "Africa/Nairobi"
+    created = client.post("/repairs", headers=admin, json=QUICK).json()["created_at"]
+    assert created.endswith("Z")  # unambiguous UTC, so browsers can convert it correctly
+
+
+def test_sms_text_has_no_doubled_punctuation(client, admin, sent_sms):
+    rid = client.post("/repairs", headers=admin, json=QUICK).json()["id"]
+    sent_sms.clear()
+    client.patch(f"/repairs/{rid}", headers=admin, json={"status": "collected"})
+    assert "!." not in sent_sms[0][1] and ".." not in sent_sms[0][1]

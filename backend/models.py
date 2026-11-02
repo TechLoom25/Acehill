@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Annotated, Optional
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field as PField, StringConstraints, field_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field as PField, StringConstraints, field_validator, model_validator
 from sqlmodel import Field, SQLModel
 
 from sms import normalise_phone
@@ -189,16 +189,22 @@ class StaffMember(BaseModel):
 
 # ---------- repair schemas ----------
 class IntakeForm(BaseModel):
+    """What the front desk fills in: whose phone, which phone, and whether it needs a part. Money comes later."""
+
     model_config = ConfigDict(str_strip_whitespace=True)
 
     name: str = PField(min_length=1, max_length=120)
-    phone: str = PField(min_length=5, max_length=20)
-    imei: str = PField("", max_length=40)  # optional: not every device has one to hand
+    phone: str = PField(min_length=5, max_length=20)  # the customer's number
+    imei: str = PField("", max_length=40)  # optional
     brand: str = PField(min_length=1, max_length=60)
     model: str = PField(min_length=1, max_length=60)
-    service_type: str = PField(min_length=1, max_length=60)
-    service_details: str = PField("", max_length=2000)
+    service_details: str = PField("", max_length=2000)  # what is wrong
     assigned_to: str = PField("", max_length=80)
+    needs_part: bool = False  # False = service only
+    part_name: str = PField("", max_length=120)  # required when needs_part
+    part_source: PartSource = PartSource.purchase  # in shop stock, or has to be bought
+    service_type: str = PField("", max_length=60)  # optional; derived from needs_part when empty
+    # Still accepted by the API (the registration screen no longer asks for them).
     service_fee: int = PField(0, ge=0, le=MAX_AMOUNT)
     deposit_amount: int = PField(0, ge=0, le=MAX_AMOUNT)
     deposit_method: PaymentMethod = PaymentMethod.cash
@@ -207,6 +213,12 @@ class IntakeForm(BaseModel):
     @classmethod
     def _phone(cls, v: str) -> str:
         return normalise_phone(v)
+
+    @model_validator(mode="after")
+    def _part_needs_a_name(self):
+        if self.needs_part and not self.part_name:
+            raise ValueError("Enter the part that is needed, or choose 'Service only'")
+        return self
 
 
 class RepairUpdate(BaseModel):

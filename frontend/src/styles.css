@@ -162,3 +162,12 @@ a.stat:hover { border-color: var(--brand); text-decoration: none; }
 .btn.danger { background: #fff; color: var(--bad); border-color: #f1b8b2; }
 .btn.danger:hover:not(:disabled) { background: var(--bad-soft); }
 textarea.reason { min-height: 60px; margin-top: 6px; font-size: 13px; min-width: 190px; }
+
+/* ---------- quick registration ---------- */
+fieldset.choice { border: 0; padding: 0; margin: 0; display: flex; gap: 12px; flex-wrap: wrap; }
+fieldset.choice legend { font-size: 13px; font-weight: 500; color: var(--muted); padding: 0; margin-bottom: 6px; }
+.pick { flex: 1 1 200px; flex-direction: row; align-items: center; gap: 10px; border: 1.5px solid #d0d5dd; border-radius: 10px; padding: 12px 14px; cursor: pointer; color: var(--ink); background: #fff; }
+.pick input { width: auto; }
+.pick span { display: flex; flex-direction: column; } .pick small { color: var(--muted); font-weight: 400; font-size: 12px; }
+.pick.on { border-color: var(--brand); background: var(--brand-soft); }
+tfoot td { font-weight: 700; border-top: 2px solid var(--ink); border-bottom: 0; }

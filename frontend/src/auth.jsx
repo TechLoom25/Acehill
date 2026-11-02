@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api, clearToken, getToken, setToken, setUnauthorizedHandler } from "./api.js";
-import { ACCESS } from "./lib.js";
+import { ACCESS, setShopTimezone } from "./lib.js";
 
 const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
@@ -16,6 +16,7 @@ export function AuthProvider({ children }) {
     setBootError("");
     try {
       const s = await api("/auth/setup-status", { auth: false });
+      setShopTimezone(s.timezone);
       setSetupInfo({ needsSetup: s.needs_setup, keyRequired: s.setup_key_required });
       if (!s.needs_setup && getToken()) {
         try {

@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { Icon, Notice, PageHeader, Spinner, TierBadge } from "../components/ui.jsx";
-import { POINTS_HELP, money } from "../lib.js";
-
-const day = (d) => (d ? new Date(/[zZ]$|[+-]\d\d:?\d\d$/.test(d) ? d : d + "Z").toLocaleDateString([], { dateStyle: "medium" }) : "—");
+import { POINTS_HELP, fmtDay, money } from "../lib.js";
 
 export default function Customers() {
   const [rows, setRows] = useState(null);
@@ -50,7 +48,7 @@ export default function Customers() {
                     <td>{c.visits}{c.repairs > c.visits && <span className="sub"> ({c.repairs} repairs)</span>}</td>
                     <td><strong>{c.points}</strong></td>
                     <td>{money(c.total_spent)}</td>
-                    <td className="muted">{day(c.last_visit)}</td>
+                    <td className="muted">{fmtDay(c.last_visit)}</td>
                   </tr>
                 ))}
                 {!sorted.length && <tr><td colSpan="7" className="muted">No customers match.</td></tr>}

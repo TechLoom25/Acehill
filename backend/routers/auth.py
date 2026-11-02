@@ -5,7 +5,7 @@ import threading
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlmodel import Session, func, select
 
-from config import SETUP_KEY
+from config import SETUP_KEY, SHOP_TIMEZONE
 from database import get_session
 from models import LoginForm, PasswordChange, Role, SetupForm, TokenOut, User, UserPublic, now_utc
 from security import (
@@ -32,7 +32,7 @@ def _token_for(user: User) -> TokenOut:
 @router.get("/setup-status")
 def setup_status(session: Session = Depends(get_session)):
     """Public: tells the frontend whether to show the first-run admin screen."""
-    return {"needs_setup": _user_count(session) == 0, "setup_key_required": bool(SETUP_KEY)}
+    return {"needs_setup": _user_count(session) == 0, "setup_key_required": bool(SETUP_KEY), "timezone": SHOP_TIMEZONE}
 
 
 @router.post("/setup", response_model=TokenOut, status_code=201)

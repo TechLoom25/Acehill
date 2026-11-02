@@ -54,16 +54,51 @@ export const SERVICE_TYPES = [
   "Other",
 ];
 
-// API times are UTC; older rows may lack a "Z" suffix
-export const toDate = (s) => new Date(/[zZ]$|[+-]\d\d:?\d\d$/.test(s) ? s : s + "Z");
-export const fmt = (d) => (d ? toDate(d).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "—");
+// ---- Dates & times --------------------------------------------------------------------------------------------
+// The API sends UTC. Everything is shown in the SHOP's time zone (not whatever the device is set to), so every screen
+// agrees with the reports even if a phone or PC has the wrong time zone selected.
+let SHOP_TZ = "Africa/Nairobi";
+export const setShopTimezone = (tz) => {
+  if (tz) SHOP_TZ = tz;
+};
 
+// Older rows may lack a "Z" suffix: treat those as UTC too.
+export const toDate = (s) => new Date(/[zZ]$|[+-]\d\d:?\d\d$/.test(s) ? s : s + "Z");
+
+export const fmt = (d) =>
+  d ? toDate(d).toLocaleString([], { dateStyle: "medium", timeStyle: "short", timeZone: SHOP_TZ }) : "—";
+export const fmtDay = (d) => (d ? toDate(d).toLocaleDateString([], { dateStyle: "medium", timeZone: SHOP_TZ }) : "—");
+
+function shopParts(date) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: SHOP_TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    }).formatToParts(date).map((p) => [p.type, p.value])
+  );
+  return parts;
+}
+
+/** UTC timestamp -> "YYYY-MM-DDTHH:mm" in shop time, for <input type="datetime-local">. */
 export const toLocalInput = (s) => {
   if (!s) return "";
-  const d = toDate(s);
-  const p = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+  const p = shopParts(toDate(s));
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
 };
+
+/** "YYYY-MM-DDTHH:mm" read as shop time -> UTC ISO string. The inverse of toLocalInput. */
+export function fromLocalInput(value) {
+  const [d, t] = value.split("T");
+  const [y, m, day] = d.split("-").map(Number);
+  const [h, min] = t.split(":").map(Number);
+  const wall = Date.UTC(y, m - 1, day, h, min);
+  const offsetAt = (ms) => {
+    const p = shopParts(new Date(ms));
+    return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute) - Math.floor(ms / 60000) * 60000;
+  };
+  let utc = wall - offsetAt(wall);
+  utc = wall - offsetAt(utc); // second pass settles daylight-saving edges (Kenya has none, other zones might)
+  return new Date(utc).toISOString();
+}
 
 export function timeAgo(s) {
   if (!s) return "never";
@@ -82,7 +117,7 @@ export const initials = (name = "") =>
   name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("") || "?";
 
 export const greeting = () => {
-  const h = new Date().getHours();
+  const h = Number(new Intl.DateTimeFormat("en-GB", { timeZone: SHOP_TZ, hour: "numeric", hourCycle: "h23" }).format(new Date()));
   return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
 };
 

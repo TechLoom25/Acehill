@@ -38,6 +38,17 @@ administrator. After that, sign in normally and add staff under **Staff**.
 | Bulk SMS                 |   ✓   |    ✓    |            |            |
 | Manage staff accounts    |   ✓   |         |            |            |
 
+## Registering a phone
+
+The check-in form asks only for the customer's number and name, the phone (brand, model, optional IMEI), what is wrong,
+and whether it is **service only** or **needs a part** (named, and marked as in shop stock or to be bought). Prices and
+payments are entered later on the repair page by front desk, managers or admins.
+
+## Time zones
+
+The database stores UTC. Every screen and report uses the shop time zone (`SHOP_TIMEZONE`, default `Africa/Nairobi`),
+whatever time zone a phone or PC is set to. "This week" is Monday to Sunday everywhere.
+
 ## Customers & loyalty
 
 Customers earn **experience points** from completed visits: 10 per visit plus 1 for every KES 100 billed.
@@ -63,8 +74,8 @@ may need it again.
   (what the customer pays; blank = same as cost). Total = service fee + parts prices.
 * Parts are either **from shop stock** or **to be purchased** (these show on the dashboard until marked bought).
 * Payments (deposit at intake, balance at pickup) are recorded per repair with the method.
-* **Finance** (admin only): *cash received* counts payments taken in the period; *profit* counts jobs **collected**
-  in the period (service fee + parts charged − parts cost). Weeks run Monday–Sunday in `SHOP_TIMEZONE`.
+* **Finance** (admin only, opens on *Today*): *service charged*, *parts cost* and *profit* count jobs **collected** in the
+  period (profit = service + parts charged − parts cost), with a line per job; *cash received* counts payments taken. Weeks run Monday–Sunday in `SHOP_TIMEZONE`.
 * Collected repairs are locked for everyone except admins. Technicians never see prices or costs.
 * Amounts are whole shillings (KES).
 
