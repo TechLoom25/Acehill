@@ -200,10 +200,12 @@ class IntakeForm(BaseModel):
     model: str = PField(min_length=1, max_length=60)
     service_details: str = PField("", max_length=2000)  # what is wrong
     assigned_to: str = PField("", max_length=80)
-    needs_part: bool = False  # False = service only
+    needs_part: bool = False  # False = no part needed
     part_name: str = PField("", max_length=120)  # required when needs_part
     part_source: PartSource = PartSource.purchase  # in shop stock, or has to be bought
-    service_type: str = PField("", max_length=60)  # optional; derived from needs_part when empty
+    part_cost: int = PField(0, ge=0, le=MAX_AMOUNT)  # what the part costs the shop
+    part_price: Optional[int] = PField(None, ge=0, le=MAX_AMOUNT)  # what the customer pays; blank = same as cost
+    service_type: str = PField("", max_length=200)  # the services chosen, e.g. "Screen replacement, Software"
     # Still accepted by the API (the registration screen no longer asks for them).
     service_fee: int = PField(0, ge=0, le=MAX_AMOUNT)
     deposit_amount: int = PField(0, ge=0, le=MAX_AMOUNT)

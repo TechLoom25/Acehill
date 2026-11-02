@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api.js";
 import { Notice, PageHeader, Spinner } from "../components/ui.jsx";
-import { fmt, methodLabel, money } from "../lib.js";
+import { fmt, methodLabel, money, todayShop } from "../lib.js";
 
 const PERIODS = [
   ["today", "Today"],
@@ -10,7 +10,16 @@ const PERIODS = [
   ["last_week", "Last week"],
   ["month", "This month"],
   ["last_month", "Last month"],
+  ["all", "All time"],
+  ["custom", "Choose dates…"],
 ];
+
+const JOB_SORTS = {
+  newest: ["Date collected: newest first", (a, b) => b.collected_at.localeCompare(a.collected_at)],
+  oldest: ["Date collected: oldest first", (a, b) => a.collected_at.localeCompare(b.collected_at)],
+  profit: ["Profit: highest first", (a, b) => b.profit - a.profit],
+  total: ["Total: highest first", (a, b) => b.total - a.total],
+};
 
 const day = (iso) => new Date(`${iso}T00:00:00`); // shop-local calendar date; only used for labels
 const shortDay = (iso) => day(iso).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
@@ -54,17 +63,30 @@ export default function Finance() {
   const [period, setPeriod] = useState("today"); // end-of-day first
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [start, setStart] = useState(() => todayShop(-6));
+  const [end, setEnd] = useState(() => todayShop());
+  const [jobSort, setJobSort] = useState("newest");
+  const [dayOrder, setDayOrder] = useState("asc");
+
+  const badRange = period === "custom" && (!start || !end || end < start);
 
   useEffect(() => {
+    if (badRange) return undefined;
     let alive = true;
     setData(null);
     setError(null);
-    api(`/reports/finance?period=${period}`)
+    const qs = period === "custom" ? `period=custom&start=${start}&end=${end}` : `period=${period}`;
+    api(`/reports/finance?${qs}`)
       .then((d) => alive && setData(d))
       .catch((ex) => alive && setError({ type: "err", text: ex.message }));
     return () => { alive = false; };
-  }, [period]);
+  }, [period, start, end, badRange]);
 
+  const jobs = useMemo(() => (data ? [...data.jobs].sort(JOB_SORTS[jobSort][1]) : []), [data, jobSort]);
+  const days = useMemo(
+    () => (data ? [...data.daily].sort((a, b) => (dayOrder === "asc" ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date))) : []),
+    [data, dayOrder]
+  );
   const methods = data ? Object.entries(data.by_method).sort((a, b) => b[1] - a[1]) : [];
   const maxMethod = Math.max(1, ...methods.map(([, v]) => v));
   const multiDay = data && data.daily.length > 1;
@@ -77,8 +99,15 @@ export default function Finance() {
           {PERIODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
       </PageHeader>
+      {period === "custom" && (
+        <div className="filters">
+          <label>From<input type="date" value={start} max={end || undefined} onChange={(e) => setStart(e.target.value)} /></label>
+          <label>To<input type="date" value={end} min={start || undefined} max={todayShop()} onChange={(e) => setEnd(e.target.value)} /></label>
+        </div>
+      )}
+      {badRange && <Notice n={{ type: "warn", text: "Choose a start date and an end date that is on or after it." }} />}
       <Notice n={error} />
-      {!data && !error && <Spinner />}
+      {!data && !error && !badRange && <Spinner />}
 
       {data && (
         <>
@@ -89,6 +118,7 @@ export default function Finance() {
           <div className="stats">
             <Kpi label="Service charged" value={money(data.service_income)} hint={`${plural(data.repairs_collected, "job")} collected · ${data.service_only_jobs} service only`} />
             <Kpi label="Parts cost" value={money(data.parts_cost)} hint={`${plural(data.jobs_with_parts, "job")} used parts · what the shop paid`} />
+            <Kpi label="Parts used" value={data.parts_used} hint="items fitted on collected jobs" />
             <Kpi label="Parts charged to customers" value={money(data.parts_revenue)} />
             <Kpi label="Profit" value={money(data.profit)} tone={data.profit > 0 ? "good" : data.profit < 0 ? "bad" : ""} hint="service + parts charged − parts cost" />
             <Kpi label="Cash received" value={money(data.cash_received)} hint={plural(data.payments_count, "payment")} />
@@ -96,14 +126,19 @@ export default function Finance() {
           </div>
 
           <section className="card">
-            <h2>Jobs collected</h2>
+            <div className="row spread">
+              <h2>Jobs collected</h2>
+              <select value={jobSort} onChange={(e) => setJobSort(e.target.value)} aria-label="Sort jobs" style={{ width: "auto" }}>
+                {Object.entries(JOB_SORTS).map(([v, [l]]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </div>
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr><th>Ticket</th><th>Device</th><th>Customer</th><th>Collected</th><th className="right">Service</th><th className="right">Parts cost</th><th className="right">Parts charged</th><th className="right">Total</th><th className="right">Profit</th></tr>
                 </thead>
                 <tbody>
-                  {data.jobs.map((j) => (
+                  {jobs.map((j) => (
                     <tr key={j.repair_id}>
                       <td><Link to={`/repairs/${j.repair_id}`}><span className="badge">{j.ticket_code}</span></Link></td>
                       <td>{j.device}{j.incomplete && <span className="sub"> · could not complete</span>}{!j.had_parts && <span className="sub"> · service only</span>}</td>
@@ -134,15 +169,24 @@ export default function Finance() {
             </div>
           </section>
 
+          {data.daily_omitted && (
+            <Notice n={{ type: "warn", text: "This range is too long for a day-by-day breakdown. Choose a shorter range to see it." }} />
+          )}
           {multiDay && (
             <section className="card">
-              <h2>Day by day</h2>
+              <div className="row spread">
+                <h2>Day by day</h2>
+                <select value={dayOrder} onChange={(e) => setDayOrder(e.target.value)} aria-label="Order days" style={{ width: "auto" }}>
+                  <option value="asc">Oldest first</option>
+                  <option value="desc">Newest first</option>
+                </select>
+              </div>
               <DailyChart daily={data.daily} />
               <div className="table-wrap" style={{ marginTop: 16 }}>
                 <table>
                   <thead><tr><th>Day</th><th className="right">Jobs</th><th className="right">Service charged</th><th className="right">Parts cost</th><th className="right">Profit</th><th className="right">Cash received</th></tr></thead>
                   <tbody>
-                    {data.daily.map((d) => (
+                    {days.map((d) => (
                       <tr key={d.date}>
                         <td>{shortDay(d.date)}</td>
                         <td className="right">{d.jobs}</td>

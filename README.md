@@ -40,9 +40,11 @@ administrator. After that, sign in normally and add staff under **Staff**.
 
 ## Registering a phone
 
-The check-in form asks only for the customer's number and name, the phone (brand, model, optional IMEI), what is wrong,
-and whether it is **service only** or **needs a part** (named, and marked as in shop stock or to be bought). Prices and
-payments are entered later on the repair page by front desk, managers or admins.
+The check-in form asks for the customer's **name** and number, the phone (brand, model, optional IMEI), then **which
+services** (screen replacement, charging port, charging system, mouthpiece, switch, service, software; tick as many as
+apply) and the **service charged**. If the phone needs a part, tick it and enter the part name, where it comes from,
+what it cost the shop and what the customer pays (blank = same as cost); otherwise leave it unticked. Payments are
+recorded later on the repair page.
 
 ## Time zones
 
@@ -64,7 +66,8 @@ work clears it.
 
 ## Deleting
 
-Administrators can permanently delete staff accounts, repairs (with their parts and payments) and payments. Deletions
+Administrators can permanently delete staff accounts, customers, repairs (with their parts and payments) and payments.
+Deleting a customer who has repairs asks for a second, explicit confirmation and removes those repairs too. Deletions
 are written to the server log (`journalctl -u acehill-backend | grep audit`). Prefer *disabling* a staff account if you
 may need it again.
 
@@ -74,7 +77,10 @@ may need it again.
   (what the customer pays; blank = same as cost). Total = service fee + parts prices.
 * Parts are either **from shop stock** or **to be purchased** (these show on the dashboard until marked bought).
 * Payments (deposit at intake, balance at pickup) are recorded per repair with the method.
-* **Finance** (admin only, opens on *Today*): *service charged*, *parts cost* and *profit* count jobs **collected** in the
+* **Dashboard** (admin only) shows cost of parts used, number of parts used, total cash and total profit for today,
+  this week, this month or all time.
+* **Finance** (admin only, opens on *Today*; also *All time* and *Choose dates…* for any exact range; jobs and days can be
+  sorted by date, profit or total): *service charged*, *parts cost* and *profit* count jobs **collected** in the
   period (profit = service + parts charged − parts cost), with a line per job; *cash received* counts payments taken. Weeks run Monday–Sunday in `SHOP_TIMEZONE`.
 * Collected repairs are locked for everyone except admins. Technicians never see prices or costs.
 * Amounts are whole shillings (KES).

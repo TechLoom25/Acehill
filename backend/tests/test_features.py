@@ -231,7 +231,7 @@ def test_register_service_only_needs_no_money_or_service_type(client, admin, sen
     r = client.post("/repairs", headers=admin, json=QUICK)
     assert r.status_code == 201, r.text
     body = r.json()
-    assert body["service_type"] == "Service only" and body["imei"] == ""
+    assert body["service_type"] == "Service" and body["imei"] == ""
     assert body["money"]["total"] == 0 and body["money"]["paid"] == 0
     assert client.get(f"/repairs/{body['id']}", headers=admin).json()["parts"] == []
 
@@ -318,3 +318,107 @@ def test_sms_text_has_no_doubled_punctuation(client, admin, sent_sms):
     sent_sms.clear()
     client.patch(f"/repairs/{rid}", headers=admin, json={"status": "collected"})
     assert "!." not in sent_sms[0][1] and ".." not in sent_sms[0][1]
+
+
+# ---------- v8: services, part price at registration, dates, customer delete ----------
+def _set_created(client, repair_id, when):
+    from database import get_session
+    from main import app
+    from models import Repair
+
+    session = next(app.dependency_overrides[get_session]())
+    r = session.get(Repair, repair_id)
+    r.created_at = when
+    session.add(r)
+    session.commit()
+
+
+def test_register_with_services_service_fee_and_part_price(client, admin, sent_sms):
+    r = client.post("/repairs", headers=admin, json={
+        **QUICK, "service_type": "Screen replacement, Software", "service_fee": 500,
+        "needs_part": True, "part_name": "A14 screen", "part_source": "purchase", "part_cost": 3000, "part_price": 3500,
+    })
+    assert r.status_code == 201, r.text
+    assert r.json()["service_type"] == "Screen replacement, Software"
+    m = r.json()["money"]
+    assert (m["service_fee"], m["parts_total"], m["parts_cost"], m["total"], m["profit"]) == (500, 3500, 3000, 4000, 1000)
+
+
+def test_part_price_defaults_to_cost_and_no_part_means_none(client, admin, sent_sms):
+    a = client.post("/repairs", headers=admin, json={**QUICK, "needs_part": True, "part_name": "Port", "part_cost": 800}).json()
+    assert a["money"]["parts_total"] == 800
+    b = client.post("/repairs", headers=admin, json={**QUICK, "phone": "0722000000", "service_fee": 300}).json()
+    assert b["money"]["parts_total"] == 0 and b["money"]["total"] == 300
+
+
+def test_repairs_filter_and_sort_by_date(client, admin, sent_sms):
+    from datetime import timedelta
+
+    from models import now_utc
+
+    ids = [client.post("/repairs", headers=admin, json={**QUICK, "phone": f"07220000{i:02d}"}).json()["id"] for i in range(3)]
+    _set_created(client, ids[0], now_utc() - timedelta(days=10))
+    _set_created(client, ids[1], now_utc() - timedelta(days=5))
+    today = now_utc().date().isoformat()
+    five_ago = (now_utc() - timedelta(days=5)).date().isoformat()
+
+    assert [r["id"] for r in client.get("/repairs", headers=admin).json()] == [ids[2], ids[1], ids[0]]
+    assert [r["id"] for r in client.get("/repairs?sort=oldest", headers=admin).json()] == [ids[0], ids[1], ids[2]]
+    assert {r["id"] for r in client.get(f"/repairs?date_from={five_ago}", headers=admin).json()} == {ids[1], ids[2]}
+    assert [r["id"] for r in client.get(f"/repairs?date_from={today}&date_to={today}", headers=admin).json()] == [ids[2]]
+    assert client.get(f"/repairs?date_from={today}&date_to={five_ago}", headers=admin).status_code == 422
+    assert client.get("/repairs?sort=nonsense", headers=admin).status_code == 422
+
+
+def test_finance_custom_range_and_all_time(client, admin, sent_sms):
+    from datetime import timedelta
+
+    from models import now_utc
+
+    rid = client.post("/repairs", headers=admin, json={**QUICK, "service_fee": 500, "deposit_amount": 500}).json()["id"]
+    client.patch(f"/repairs/{rid}", headers=admin, json={"status": "collected"})
+    today = now_utc().date()
+    d = lambda n: (today + timedelta(days=n)).isoformat()  # noqa: E731
+
+    hit = client.get(f"/reports/finance?period=custom&start={d(-2)}&end={d(1)}", headers=admin).json()
+    assert hit["cash_received"] == 500 and hit["service_income"] == 500 and len(hit["daily"]) == 4
+    miss = client.get(f"/reports/finance?period=custom&start={d(-9)}&end={d(-3)}", headers=admin).json()
+    assert miss["cash_received"] == 0 and miss["repairs_collected"] == 0
+    one_day = client.get(f"/reports/finance?period=custom&start={d(0)}&end={d(0)}", headers=admin).json()
+    assert one_day["start"] == one_day["end"] and one_day["repairs_collected"] == 1
+
+    everything = client.get("/reports/finance?period=all", headers=admin).json()
+    assert everything["service_income"] == 500 and everything["cash_received"] == 500
+
+    assert client.get("/reports/finance?period=custom", headers=admin).status_code == 422
+    assert client.get(f"/reports/finance?period=custom&start={d(1)}&end={d(0)}", headers=admin).status_code == 422
+    assert client.get(f"/reports/finance?period=custom&start={d(-2000)}&end={d(0)}", headers=admin).status_code == 422
+
+
+def test_finance_reports_parts_used(client, admin, sent_sms):
+    rid = client.post("/repairs", headers=admin, json={**QUICK, "needs_part": True, "part_name": "Screen", "part_cost": 1000}).json()["id"]
+    client.post(f"/repairs/{rid}/parts", headers=admin, json={"name": "Screws", "quantity": 4, "unit_cost": 10})
+    client.patch(f"/repairs/{rid}", headers=admin, json={"status": "collected"})
+    r = client.get("/reports/finance?period=today", headers=admin).json()
+    assert r["parts_used"] == 5 and r["parts_cost"] == 1040
+
+
+def test_admin_deletes_customer_safely(client, admin, make_staff, sent_sms):
+    desk = make_staff("dina", "front_desk")
+    rid = client.post("/repairs", headers=desk, json={**QUICK, "service_fee": 500, "deposit_amount": 200}).json()["id"]
+    lone = client.post("/repairs", headers=admin, json={**QUICK, "phone": "0799000111", "name": "Lone"}).json()
+    cust = {c["name"]: c["id"] for c in client.get("/customers", headers=admin).json()}
+
+    assert client.delete(f"/customers/{cust['Amina']}", headers=desk).status_code == 403
+    guard = client.delete(f"/customers/{cust['Amina']}", headers=admin)
+    assert guard.status_code == 409 and "1 repair" in guard.json()["detail"]
+    assert client.get(f"/repairs/{rid}", headers=admin).status_code == 200  # nothing was deleted
+
+    done = client.delete(f"/customers/{cust['Amina']}?delete_repairs=true", headers=admin).json()
+    assert done == {"ok": True, "repairs": 1, "parts": 0, "payments": 1}
+    assert client.get(f"/repairs/{rid}", headers=admin).status_code == 404
+    assert {c["name"] for c in client.get("/customers", headers=admin).json()} == {"Lone"}
+    assert client.delete("/customers/9999", headers=admin).status_code == 404
+    # a customer with no repairs goes without the extra flag
+    client.delete(f"/repairs/{lone['id']}", headers=admin)
+    assert client.delete(f"/customers/{cust['Lone']}", headers=admin).status_code == 200

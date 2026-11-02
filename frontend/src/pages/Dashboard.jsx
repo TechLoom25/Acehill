@@ -14,12 +14,17 @@ export default function Dashboard() {
   const { user, can } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
-  const [week, setWeek] = useState(null); // admin-only money summary
+  const [summary, setSummary] = useState(null); // admin-only money summary
+  const [period, setPeriod] = useState("today");
+  const canFinance = can("finance");
 
   useEffect(() => {
-    if (!can("finance")) return;
-    api("/reports/finance?period=week").then(setWeek).catch(() => {});
-  }, [can]);
+    if (!canFinance) return undefined;
+    let alive = true;
+    setSummary(null);
+    api(`/reports/finance?period=${period}`).then((d) => alive && setSummary(d)).catch(() => {});
+    return () => { alive = false; };
+  }, [canFinance, period]);
 
   useEffect(() => {
     let alive = true;
@@ -55,9 +60,29 @@ export default function Dashboard() {
         <Stat label="New this week" value={data.new_this_week} />
         <Stat label="Finished this week" value={data.completed_this_week} />
         {can("sms") && <Stat label="Customers" value={data.customers} />}
-        {week && <Stat label="Cash this week" value={money(week.cash_received)} to="/finance" />}
-        {week && <Stat label="Profit this week" value={money(week.profit)} tone={week.profit > 0 ? "good" : ""} to="/finance" />}
       </div>
+
+      {canFinance && (
+        <section className="card">
+          <div className="row spread">
+            <h2>Money</h2>
+            <select value={period} onChange={(e) => setPeriod(e.target.value)} aria-label="Money period" style={{ width: "auto" }}>
+              <option value="today">Today</option>
+              <option value="week">This week</option>
+              <option value="month">This month</option>
+              <option value="all">All time</option>
+            </select>
+          </div>
+          {!summary ? <Spinner /> : (
+            <div className="stats">
+              <Stat label="Cost of parts used" value={money(summary.parts_cost)} to="/finance" />
+              <Stat label="Parts used" value={summary.parts_used} to="/finance" />
+              <Stat label="Total cash" value={money(summary.cash_received)} to="/finance" />
+              <Stat label="Total profit" value={money(summary.profit)} tone={summary.profit > 0 ? "good" : summary.profit < 0 ? "bad" : ""} to="/finance" />
+            </div>
+          )}
+        </section>
+      )}
 
       <div className="split">
         <section className="card">

@@ -1,7 +1,8 @@
 """Repairs, SMS, public tracking and the dashboard."""
 import logging
 import secrets
-from typing import Optional
+from datetime import date, timedelta
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.exc import IntegrityError
@@ -28,7 +29,8 @@ from models import (
 )
 from security import current_user, require_roles
 from sms import send_sms, try_send_sms
-from timeutil import week_start
+from records import purge_repair
+from timeutil import day_start, week_start
 
 router = APIRouter(tags=["shop"])
 audit = logging.getLogger("acehill.audit")  # shows up in: journalctl -u acehill-backend
@@ -64,11 +66,11 @@ def register_repair(form: IntakeForm, session: Session = Depends(get_session), u
         candidate = Repair(
             ticket_code=secrets.token_hex(3).upper(),
             customer_id=customer.id,
-            service_type=form.service_type or ("Part replacement" if form.needs_part else "Service only"),
+            service_type=form.service_type or ("Part replacement" if form.needs_part else "Service"),
             **form.model_dump(
                 exclude={
                     "name", "phone", "deposit_amount", "deposit_method",
-                    "needs_part", "part_name", "part_source", "service_type",
+                    "needs_part", "part_name", "part_source", "part_cost", "part_price", "service_type",
                 }
             ),
         )
@@ -89,6 +91,8 @@ def register_repair(form: IntakeForm, session: Session = Depends(get_session), u
                 repair_id=repair.id,
                 name=form.part_name,
                 source=form.part_source,
+                unit_cost=form.part_cost,
+                unit_price=form.part_price if form.part_price is not None else form.part_cost,
                 acquired=form.part_source == PartSource.stock,
                 added_by=user.full_name,
             )
@@ -119,16 +123,25 @@ def register_repair(form: IntakeForm, session: Session = Depends(get_session), u
 def list_repairs(
     status: Optional[Status] = None,
     q: Optional[str] = Query(None, max_length=80, description="Search ticket, IMEI, device or customer"),
+    date_from: Optional[date] = Query(None, description="Registered on or after this day (shop time)"),
+    date_to: Optional[date] = Query(None, description="Registered on or before this day (shop time)"),
+    sort: Literal["newest", "oldest", "updated"] = "newest",
     limit: int = Query(200, ge=1, le=500),
     session: Session = Depends(get_session),
     user: User = Depends(current_user),
 ):
-    stmt = (
-        select(Repair, Customer)
-        .join(Customer, Customer.id == Repair.customer_id)
-        .order_by(col(Repair.created_at).desc())
-        .limit(limit)
-    )
+    if date_from and date_to and date_to < date_from:
+        raise HTTPException(422, "The 'to' date can't be before the 'from' date.")
+    order = {
+        "newest": col(Repair.created_at).desc(),
+        "oldest": col(Repair.created_at).asc(),
+        "updated": col(Repair.updated_at).desc(),
+    }[sort]
+    stmt = select(Repair, Customer).join(Customer, Customer.id == Repair.customer_id).order_by(order).limit(limit)
+    if date_from:
+        stmt = stmt.where(Repair.created_at >= day_start(date_from))
+    if date_to:
+        stmt = stmt.where(Repair.created_at < day_start(date_to + timedelta(days=1)))
     if status:
         stmt = stmt.where(Repair.status == status)
     if q and q.strip():
@@ -231,18 +244,14 @@ def delete_repair(repair_id: int, session: Session = Depends(get_session), admin
     repair = session.get(Repair, repair_id)
     if repair is None:
         raise HTTPException(404, "Repair not found.")
-    parts = session.exec(select(Part).where(Part.repair_id == repair_id)).all()
-    payments = session.exec(select(Payment).where(Payment.repair_id == repair_id)).all()
-    received = sum(p.amount for p in payments)
-    for row in (*parts, *payments):
-        session.delete(row)
-    session.delete(repair)
+    ticket = repair.ticket_code
+    parts, payments, received = purge_repair(session, repair)
     session.commit()
     audit.warning(
         "repair %s deleted by %s (%s): %d part(s), %d payment(s) totalling KES %d",
-        repair.ticket_code, admin.username, admin.full_name, len(parts), len(payments), received,
+        ticket, admin.username, admin.full_name, parts, payments, received,
     )
-    return {"ok": True, "parts": len(parts), "payments": len(payments)}
+    return {"ok": True, "parts": parts, "payments": payments}
 
 
 # ---------- public tracking ----------

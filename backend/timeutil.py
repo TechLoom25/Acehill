@@ -1,5 +1,5 @@
 """Shop-local time handling. The database stores UTC; "today" and "this week" are decided in the shop's time zone."""
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
@@ -40,3 +40,13 @@ def period_bounds(period: str, now: datetime, tz: Optional[ZoneInfo] = None) -> 
 def week_start(now: datetime) -> datetime:
     """Monday 00:00 in shop time, as UTC. The dashboard and the finance page now agree on what "this week" is."""
     return period_bounds("week", now)[0]
+
+
+def day_start(day: date, tz: Optional[ZoneInfo] = None) -> datetime:
+    """Midnight at the start of a shop-local calendar day, as UTC."""
+    return datetime.combine(day, time.min, tzinfo=tz or shop_tz()).astimezone(timezone.utc)
+
+
+def range_bounds(first: date, last: date, tz: Optional[ZoneInfo] = None) -> tuple[datetime, datetime]:
+    """[start, end) covering whole shop-local days first..last inclusive, as UTC."""
+    return day_start(first, tz), day_start(last + timedelta(days=1), tz)

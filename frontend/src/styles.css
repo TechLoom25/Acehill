@@ -171,3 +171,8 @@ fieldset.choice legend { font-size: 13px; font-weight: 500; color: var(--muted);
 .pick span { display: flex; flex-direction: column; } .pick small { color: var(--muted); font-weight: 400; font-size: 12px; }
 .pick.on { border-color: var(--brand); background: var(--brand-soft); }
 tfoot td { font-weight: 700; border-top: 2px solid var(--ink); border-bottom: 0; }
+.pick.small { flex: 0 1 auto; padding: 8px 12px; }
+.filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 14px; }
+.filters label { min-width: 140px; }
+.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.sortable:hover { color: var(--ink); }

@@ -47,12 +47,20 @@ export const toAmount = (v) => Math.max(0, Math.round(Number(v) || 0));
 
 export const SERVICE_TYPES = [
   "Screen replacement",
-  "Battery replacement",
   "Charging port",
-  "Software / flashing",
-  "Water damage",
+  "Charging system",
+  "Mouthpiece",
+  "Switch",
+  "Service",
+  "Software",
   "Other",
 ];
+
+/** Today's date as YYYY-MM-DD in shop time (for date inputs). */
+export const todayShop = (offsetDays = 0) => {
+  const d = new Date(Date.now() + offsetDays * 86400000);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: SHOP_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+};
 
 // ---- Dates & times --------------------------------------------------------------------------------------------
 // The API sends UTC. Everything is shown in the SHOP's time zone (not whatever the device is set to), so every screen

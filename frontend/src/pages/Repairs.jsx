@@ -4,7 +4,7 @@ import { api } from "../api.js";
 import { useAuth } from "../auth.jsx";
 import { Icon, Notice, PageHeader, ProgressBar, Spinner, TierBadge } from "../components/ui.jsx";
 import StaffDatalist from "../components/StaffDatalist.jsx";
-import { STATUSES, fromLocalInput, money, toLocalInput } from "../lib.js";
+import { STATUSES, fmt, fmtDay, fromLocalInput, money, toLocalInput } from "../lib.js";
 
 function RepairRow({ r, showMoney, isAdmin, onSaved, onDeleted, onError }) {
   const initial = {
@@ -73,6 +73,7 @@ function RepairRow({ r, showMoney, isAdmin, onSaved, onDeleted, onError }) {
         </div>
         <div className="sub">{[r.customer_phone, r.imei && `IMEI ${r.imei}`].filter(Boolean).join(" · ")}</div>
       </td>
+      <td className="muted" title={fmt(r.created_at)}>{fmtDay(r.created_at)}</td>
       {showMoney && (
         <td>
           {money(r.money.total)}
@@ -120,18 +121,24 @@ export default function Repairs() {
   const [rows, setRows] = useState(null);
   const [status, setStatus] = useState("");
   const [query, setQuery] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [sort, setSort] = useState("newest");
   const [note, setNote] = useState(useLocation().state?.flash ?? null);
 
   const load = useCallback(async () => {
     const params = new URLSearchParams();
     if (status) params.set("status", status);
     if (query.trim()) params.set("q", query.trim());
+    if (dateFrom) params.set("date_from", dateFrom);
+    if (dateTo) params.set("date_to", dateTo);
+    params.set("sort", sort);
     try {
       setRows(await api(`/repairs?${params}`));
     } catch (ex) {
       setNote({ type: "err", text: ex.message });
     }
-  }, [status, query]);
+  }, [status, query, dateFrom, dateTo, sort]);
 
   // Debounce so typing in the search box doesn't fire a request per keystroke.
   useEffect(() => {
@@ -155,6 +162,8 @@ export default function Repairs() {
     setNote({ type: "ok", text: `Repair ${r.ticket_code} deleted.` });
   }
 
+  const sortLabel = { newest: "newest first", oldest: "oldest first", updated: "recently updated first" }[sort];
+
   return (
     <>
       <PageHeader title="Repairs" subtitle="Update status and progress. Changing the status texts the customer.">
@@ -172,22 +181,38 @@ export default function Repairs() {
           </select>
           <button className="btn ghost" onClick={load}>Refresh</button>
         </div>
+        <div className="filters">
+          <label>Registered from
+            <input type="date" value={dateFrom} max={dateTo || undefined} onChange={(e) => setDateFrom(e.target.value)} />
+          </label>
+          <label>to
+            <input type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => setDateTo(e.target.value)} />
+          </label>
+          <label>Sort by
+            <select value={sort} onChange={(e) => setSort(e.target.value)}>
+              <option value="newest">Date registered: newest first</option>
+              <option value="oldest">Date registered: oldest first</option>
+              <option value="updated">Recently updated</option>
+            </select>
+          </label>
+          {(dateFrom || dateTo) && <button className="btn ghost" onClick={() => { setDateFrom(""); setDateTo(""); }}>Clear dates</button>}
+        </div>
         <Notice n={note} />
         <StaffDatalist />
         {rows === null ? <Spinner /> : (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Ticket</th><th>Device</th>{showMoney && <th>Charges</th>}<th>Status</th><th>Progress %</th><th>Ready by</th><th>Technician</th><th /></tr></thead>
+              <thead><tr><th>Ticket</th><th>Device</th><th>Registered</th>{showMoney && <th>Charges</th>}<th>Status</th><th>Progress %</th><th>Ready by</th><th>Technician</th><th /></tr></thead>
               <tbody>
                 {rows.map((r) => (
                   <RepairRow key={`${r.id}-${r.updated_at}`} r={r} showMoney={showMoney} isAdmin={isAdmin} onSaved={saved} onDeleted={deleted} onError={(text) => setNote({ type: "err", text })} />
                 ))}
-                {!rows.length && <tr><td colSpan={showMoney ? 8 : 7} className="muted">No repairs match.</td></tr>}
+                {!rows.length && <tr><td colSpan={showMoney ? 9 : 8} className="muted">No repairs match.</td></tr>}
               </tbody>
             </table>
           </div>
         )}
-        {rows && rows.length > 0 && <p className="muted small">Showing {rows.length} repair{rows.length > 1 ? "s" : ""}, newest first.</p>}
+        {rows && rows.length > 0 && <p className="muted small">Showing {rows.length} repair{rows.length > 1 ? "s" : ""}, {sortLabel}.</p>}
       </section>
     </>
   );
