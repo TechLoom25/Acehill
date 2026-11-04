@@ -61,7 +61,7 @@ def add_part(
         quantity=body.quantity,
         source=body.source,
         unit_cost=cost,
-        unit_price=body.unit_price if body.unit_price is not None else cost,
+        unit_price=body.unit_price if body.unit_price is not None else 0,  # the service fee is the whole bill
         acquired=body.acquired if body.acquired is not None else body.source == PartSource.stock,
         added_by=user.full_name,
     )
@@ -87,8 +87,9 @@ def update_part(
     changes = {k: v for k, v in changes.items() if v is not None}
     if any(k in changes for k in _PRICE_FIELDS):
         _require_finance(user)
-    # A part sold at cost (no markup) keeps its price in step when only the cost is edited.
-    if "unit_cost" in changes and "unit_price" not in changes and part.unit_price == part.unit_cost:
+    # An older part sold at cost (no markup) keeps its price in step when only the cost is edited.
+    # Parts with no separate price (0) never do: their cost is the shop's expense, not a charge.
+    if "unit_cost" in changes and "unit_price" not in changes and part.unit_price > 0 and part.unit_price == part.unit_cost:
         changes["unit_price"] = changes["unit_cost"]
     for key, value in changes.items():
         setattr(part, key, value)

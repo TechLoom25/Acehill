@@ -27,21 +27,21 @@ def test_intake_records_service_fee_and_deposit(client, admin, sent_sms):
     assert detail["payments"][0]["method"] == "mpesa" and detail["payments"][0]["amount"] == 1000
 
 
-# ---------- the worked example: 3,500 = 500 service + 3,000 part ----------
+# ---------- the worked example: charge 3,000 for the repair, the part costs the shop 2,000 ----------
 def test_price_breakdown_and_profit(client, admin, sent_sms):
-    repair = new_repair(client, admin, service_fee=500)
+    repair = new_repair(client, admin, service_fee=3000)
     part = client.post(
         f"/repairs/{repair['id']}/parts",
         headers=admin,
-        json={"name": "A14 screen", "source": "purchase", "unit_cost": 3000},
+        json={"name": "A14 screen", "source": "purchase", "unit_cost": 2000},
     )
     assert part.status_code == 201
-    assert part.json()["unit_price"] == 3000 and part.json()["acquired"] is False  # price follows cost
+    assert part.json()["unit_price"] == 0 and part.json()["acquired"] is False  # cost only, not added to the bill
 
     money = client.get(f"/repairs/{repair['id']}", headers=admin).json()["money"]
     assert money == {
-        "service_fee": 500, "parts_total": 3000, "parts_cost": 3000,
-        "total": 3500, "paid": 0, "balance": 3500, "profit": 500,
+        "service_fee": 3000, "parts_total": 0, "parts_cost": 2000,
+        "total": 3000, "paid": 0, "balance": 3000, "profit": 1000,
     }
 
 
@@ -84,6 +84,10 @@ def test_profit_is_admin_only(client, admin, make_staff, sent_sms):
 def test_cost_edit_updates_price_only_when_sold_at_cost(client, admin, sent_sms):
     rid = new_repair(client, admin)["id"]
     part = client.post(f"/repairs/{rid}/parts", headers=admin, json={"name": "Port", "unit_cost": 100}).json()
+    # A new part has no separate price, so editing its cost never turns it into a charge.
+    assert client.patch(f"/parts/{part['id']}", headers=admin, json={"unit_cost": 150}).json()["unit_price"] == 0
+    # An older part priced at cost still follows cost edits.
+    part = client.post(f"/repairs/{rid}/parts", headers=admin, json={"name": "Port", "unit_cost": 100, "unit_price": 100}).json()
     assert client.patch(f"/parts/{part['id']}", headers=admin, json={"unit_cost": 150}).json()["unit_price"] == 150
     client.patch(f"/parts/{part['id']}", headers=admin, json={"unit_price": 300})
     assert client.patch(f"/parts/{part['id']}", headers=admin, json={"unit_cost": 200}).json()["unit_price"] == 300
@@ -130,8 +134,8 @@ def test_parts_to_buy_queue(client, admin, sent_sms):
 
 # ---------- finance report ----------
 def test_finance_report_week(client, admin, sent_sms):
-    # Job 1: 500 service + 3000 part, fully paid, collected -> profit 500
-    a = new_repair(client, admin, service_fee=500, deposit_amount=1000, deposit_method="mpesa")["id"]
+    # Job 1: charged 3500 in all, the part cost the shop 3000, fully paid, collected -> profit 500
+    a = new_repair(client, admin, service_fee=3500, deposit_amount=1000, deposit_method="mpesa")["id"]
     client.post(f"/repairs/{a}/parts", headers=admin, json={"name": "Screen", "unit_cost": 3000})
     client.post(f"/repairs/{a}/payments", headers=admin, json={"amount": 2500, "method": "cash"})
     client.patch(f"/repairs/{a}", headers=admin, json={"status": "collected"})
@@ -142,7 +146,7 @@ def test_finance_report_week(client, admin, sent_sms):
     assert r["cash_received"] == 3500 and r["payments_count"] == 2
     assert r["by_method"] == {"mpesa": 1000, "cash": 2500}
     assert r["repairs_collected"] == 1
-    assert (r["service_income"], r["parts_revenue"], r["parts_cost"], r["profit"]) == (500, 3000, 3000, 500)
+    assert (r["service_income"], r["parts_revenue"], r["parts_cost"], r["profit"]) == (3500, 0, 3000, 500)
     assert (r["outstanding"], r["outstanding_count"]) == (2000, 1)
     assert r["parts_without_cost"] == 0
     assert len(r["daily"]) == 7 and sum(d["cash"] for d in r["daily"]) == 3500

@@ -4,7 +4,10 @@ import { api } from "../api.js";
 import { useAuth } from "../auth.jsx";
 import { Icon, Notice, PageHeader, ProgressBar, Spinner, TierBadge } from "../components/ui.jsx";
 import StaffDatalist from "../components/StaffDatalist.jsx";
-import { STATUSES, fmt, fmtDay, fromLocalInput, money, toLocalInput } from "../lib.js";
+import { STATUSES, fmt, fmtDay, fromLocalInput, money, toLocalInput, todayShop } from "../lib.js";
+
+// A calendar date (YYYY-MM-DD) as a label; no time zone conversion is involved.
+const dayLabel = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
 
 function RepairRow({ r, showMoney, isAdmin, onSaved, onDeleted, onError }) {
   const initial = {
@@ -121,8 +124,9 @@ export default function Repairs() {
   const [rows, setRows] = useState(null);
   const [status, setStatus] = useState("");
   const [query, setQuery] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  // Open on today's repairs; the filters below widen it.
+  const [dateFrom, setDateFrom] = useState(() => todayShop());
+  const [dateTo, setDateTo] = useState(() => todayShop());
   const [sort, setSort] = useState("newest");
   const [note, setNote] = useState(useLocation().state?.flash ?? null);
 
@@ -130,8 +134,11 @@ export default function Repairs() {
     const params = new URLSearchParams();
     if (status) params.set("status", status);
     if (query.trim()) params.set("q", query.trim());
-    if (dateFrom) params.set("date_from", dateFrom);
-    if (dateTo) params.set("date_to", dateTo);
+    // Searching looks through every date, so an old ticket or customer can always be found.
+    if (!query.trim()) {
+      if (dateFrom) params.set("date_from", dateFrom);
+      if (dateTo) params.set("date_to", dateTo);
+    }
     params.set("sort", sort);
     try {
       setRows(await api(`/repairs?${params}`));
@@ -162,6 +169,11 @@ export default function Repairs() {
     setNote({ type: "ok", text: `Repair ${r.ticket_code} deleted.` });
   }
 
+  const today = todayShop();
+  const scopeLabel = query.trim() ? ", searched across all dates"
+    : !dateFrom && !dateTo ? ", all dates"
+    : dateFrom === today && dateTo === today ? ", registered today"
+    : `, registered ${dateFrom ? dayLabel(dateFrom) : "…"}${dateTo && dateTo !== dateFrom ? ` – ${dayLabel(dateTo)}` : ""}`;
   const sortLabel = { newest: "newest first", oldest: "oldest first", updated: "recently updated first" }[sort];
 
   return (
@@ -195,7 +207,10 @@ export default function Repairs() {
               <option value="updated">Recently updated</option>
             </select>
           </label>
-          {(dateFrom || dateTo) && <button className="btn ghost" onClick={() => { setDateFrom(""); setDateTo(""); }}>Clear dates</button>}
+          <button className="btn ghost" onClick={() => { setDateFrom(todayShop()); setDateTo(todayShop()); }}>Today</button>
+          <button className="btn ghost" onClick={() => { setDateFrom(todayShop(-1)); setDateTo(todayShop(-1)); }}>Yesterday</button>
+          <button className="btn ghost" onClick={() => { setDateFrom(todayShop(-6)); setDateTo(todayShop()); }}>Last 7 days</button>
+          <button className="btn ghost" onClick={() => { setDateFrom(""); setDateTo(""); }}>All dates</button>
         </div>
         <Notice n={note} />
         <StaffDatalist />
@@ -207,12 +222,12 @@ export default function Repairs() {
                 {rows.map((r) => (
                   <RepairRow key={`${r.id}-${r.updated_at}`} r={r} showMoney={showMoney} isAdmin={isAdmin} onSaved={saved} onDeleted={deleted} onError={(text) => setNote({ type: "err", text })} />
                 ))}
-                {!rows.length && <tr><td colSpan={showMoney ? 9 : 8} className="muted">No repairs match.</td></tr>}
+                {!rows.length && <tr><td colSpan={showMoney ? 9 : 8} className="muted">No repairs match. Try another date or "All dates".</td></tr>}
               </tbody>
             </table>
           </div>
         )}
-        {rows && rows.length > 0 && <p className="muted small">Showing {rows.length} repair{rows.length > 1 ? "s" : ""}, {sortLabel}.</p>}
+        {rows && rows.length > 0 && <p className="muted small">Showing {rows.length} repair{rows.length > 1 ? "s" : ""}, {sortLabel}{scopeLabel}.</p>}
       </section>
     </>
   );

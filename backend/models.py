@@ -204,7 +204,7 @@ class IntakeForm(BaseModel):
     part_name: str = PField("", max_length=120)  # required when needs_part
     part_source: PartSource = PartSource.purchase  # in shop stock, or has to be bought
     part_cost: int = PField(0, ge=0, le=MAX_AMOUNT)  # what the part costs the shop
-    part_price: Optional[int] = PField(None, ge=0, le=MAX_AMOUNT)  # what the customer pays; blank = same as cost
+    part_price: Optional[int] = PField(None, ge=0, le=MAX_AMOUNT)  # extra charged for the part; blank = 0 (service fee is the total)
     service_type: str = PField("", max_length=200)  # the services chosen, e.g. "Screen replacement, Software"
     # Still accepted by the API (the registration screen no longer asks for them).
     service_fee: int = PField(0, ge=0, le=MAX_AMOUNT)
@@ -248,7 +248,7 @@ class PartCreate(BaseModel):
     quantity: int = PField(1, ge=1, le=1000)
     source: PartSource = PartSource.stock
     unit_cost: Optional[int] = PField(None, ge=0, le=MAX_AMOUNT)
-    unit_price: Optional[int] = PField(None, ge=0, le=MAX_AMOUNT)  # defaults to unit_cost
+    unit_price: Optional[int] = PField(None, ge=0, le=MAX_AMOUNT)  # extra charged for the part; defaults to 0
     acquired: Optional[bool] = None  # defaults to True for stock parts, False for purchases
 
     @field_validator("name")

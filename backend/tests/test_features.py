@@ -26,7 +26,7 @@ def collect(client, headers, rid):
 
 # ---------- loyalty points ----------
 def test_points_and_tiers_come_from_collected_visits(client, admin, sent_sms):
-    r1 = new_repair(client, admin, service_fee=500)
+    r1 = new_repair(client, admin, service_fee=3500)
     client.post(f"/repairs/{r1['id']}/parts", headers=admin, json={"name": "Screen", "unit_cost": 3000})
     assert r1["customer_tier"] == "New" and r1["customer_points"] == 0  # nothing collected yet
 
@@ -35,7 +35,7 @@ def test_points_and_tiers_come_from_collected_visits(client, admin, sent_sms):
     assert (again["customer_visits"], again["customer_points"], again["customer_tier"]) == (1, 45, "Returning")
 
     for _ in range(2):  # two more 3,500 visits -> 135 points -> Silver
-        j = new_repair(client, admin, service_fee=500)
+        j = new_repair(client, admin, service_fee=3500)
         client.post(f"/repairs/{j['id']}/parts", headers=admin, json={"name": "Screen", "unit_cost": 3000})
         collect(client, admin, j["id"])
     assert new_repair(client, admin)["customer_tier"] == "Silver"
@@ -259,16 +259,16 @@ def test_a_needed_part_must_be_named(client, admin):
 def test_end_of_day_summary_lists_jobs_with_service_and_parts(client, admin, sent_sms):
     a = client.post("/repairs", headers=admin, json={**QUICK, "service_fee": 500}).json()["id"]  # service only
     b = client.post("/repairs", headers=admin, json={**QUICK, "phone": "0722000000", "name": "Brian", "needs_part": True,
-                                                       "part_name": "Screen", "service_fee": 500}).json()["id"]
+                                                       "part_name": "Screen", "service_fee": 3500}).json()["id"]
     part = client.get(f"/repairs/{b}", headers=admin).json()["parts"][0]
     client.patch(f"/parts/{part['id']}", headers=admin, json={"unit_cost": 3000})
     for rid in (a, b):
         client.patch(f"/repairs/{rid}", headers=admin, json={"status": "collected"})
 
     r = client.get("/reports/finance?period=today", headers=admin).json()
-    assert (r["service_income"], r["parts_cost"], r["parts_revenue"], r["profit"]) == (1000, 3000, 3000, 1000)
+    assert (r["service_income"], r["parts_cost"], r["parts_revenue"], r["profit"]) == (4000, 3000, 0, 1000)
     assert (r["repairs_collected"], r["service_only_jobs"], r["jobs_with_parts"]) == (2, 1, 1)
-    assert len(r["daily"]) == 1 and r["daily"][0]["service"] == 1000 and r["daily"][0]["parts_cost"] == 3000
+    assert len(r["daily"]) == 1 and r["daily"][0]["service"] == 4000 and r["daily"][0]["parts_cost"] == 3000
     jobs = {j["customer"]: j for j in r["jobs"]}
     assert jobs["Brian"]["parts_cost"] == 3000 and jobs["Brian"]["profit"] == 500 and jobs["Brian"]["had_parts"]
     assert jobs["Amina"]["parts_cost"] == 0 and jobs["Amina"]["service"] == 500 and not jobs["Amina"]["had_parts"]
@@ -344,9 +344,10 @@ def test_register_with_services_service_fee_and_part_price(client, admin, sent_s
     assert (m["service_fee"], m["parts_total"], m["parts_cost"], m["total"], m["profit"]) == (500, 3500, 3000, 4000, 1000)
 
 
-def test_part_price_defaults_to_cost_and_no_part_means_none(client, admin, sent_sms):
-    a = client.post("/repairs", headers=admin, json={**QUICK, "needs_part": True, "part_name": "Port", "part_cost": 800}).json()
-    assert a["money"]["parts_total"] == 800
+def test_part_cost_is_not_added_to_the_bill_and_no_part_means_none(client, admin, sent_sms):
+    a = client.post("/repairs", headers=admin, json={
+        **QUICK, "service_fee": 3000, "needs_part": True, "part_name": "Port", "part_cost": 2000}).json()
+    assert (a["money"]["parts_total"], a["money"]["total"], a["money"]["profit"]) == (0, 3000, 1000)
     b = client.post("/repairs", headers=admin, json={**QUICK, "phone": "0722000000", "service_fee": 300}).json()
     assert b["money"]["parts_total"] == 0 and b["money"]["total"] == 300
 

@@ -8,7 +8,7 @@ import { SERVICE_TYPES, money, toAmount } from "../lib.js";
 const empty = {
   name: "", phone: "", brand: "", model: "", imei: "", service_details: "", assigned_to: "",
   services: [], service_fee: "",
-  needs_part: false, part_name: "", part_source: "", part_cost: "", part_price: "",
+  needs_part: false, part_name: "", part_source: "", part_cost: "",
 };
 
 export default function NewRepair() {
@@ -57,7 +57,6 @@ export default function NewRepair() {
         part_name: f.needs_part ? f.part_name : "",
         part_source: f.part_source || "purchase",
         part_cost: f.needs_part ? toAmount(f.part_cost) : 0,
-        part_price: f.needs_part && f.part_price !== "" ? toAmount(f.part_price) : null,
       };
       const r = await api("/repairs", { method: "POST", body });
       setDone(r);
@@ -70,7 +69,9 @@ export default function NewRepair() {
     setBusy(false);
   }
 
-  const total = toAmount(f.service_fee) + (f.needs_part ? toAmount(f.part_price !== "" ? f.part_price : f.part_cost) : 0);
+  // The service charge is the whole bill; a part's cost is the shop's expense and is not added to it.
+  const total = toAmount(f.service_fee);
+  const profit = total - (f.needs_part ? toAmount(f.part_cost) : 0);
 
   return (
     <>
@@ -123,7 +124,7 @@ export default function NewRepair() {
         </label>
 
         <div className="grid">
-          <label>Service charged (KES)
+          <label>Amount charged to customer (KES)
             <input type="number" min="0" step="1" inputMode="numeric" value={f.service_fee} onChange={set("service_fee")} placeholder="0" />
           </label>
           <label>Assigned technician (optional)
@@ -153,14 +154,15 @@ export default function NewRepair() {
               <label>Part cost to shop (KES)
                 <input type="number" min="0" step="1" inputMode="numeric" value={f.part_cost} onChange={set("part_cost")} placeholder="0" />
               </label>
-              <label>Part price to customer (KES)
-                <input type="number" min="0" step="1" inputMode="numeric" value={f.part_price} onChange={set("part_price")} placeholder="same as cost" />
-              </label>
             </div>
           </>
         )}
 
-        <div className="muted">Total to charge: <strong>{money(total)}</strong> <span className="small">(payments are recorded later on the repair page)</span></div>
+        <div className="muted">
+          Total to charge: <strong>{money(total)}</strong>
+          {f.needs_part && toAmount(f.part_cost) > 0 && <span className="small"> · the part's cost is not added to the bill (profit {money(profit)})</span>}
+          <div className="small">Payments are recorded later on the repair page.</div>
+        </div>
 
         <Notice n={error} />
         <div><button className="btn" disabled={busy}>{busy ? "Saving…" : "Register & notify customer"}</button></div>

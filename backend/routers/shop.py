@@ -92,7 +92,7 @@ def register_repair(form: IntakeForm, session: Session = Depends(get_session), u
                 name=form.part_name,
                 source=form.part_source,
                 unit_cost=form.part_cost,
-                unit_price=form.part_price if form.part_price is not None else form.part_cost,
+                unit_price=form.part_price if form.part_price is not None else 0,  # the service charge is the whole bill
                 acquired=form.part_source == PartSource.stock,
                 added_by=user.full_name,
             )

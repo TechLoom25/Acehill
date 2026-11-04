@@ -184,12 +184,12 @@ export default function RepairDetail() {
             {showMoney && (
               <>
                 <label className="narrow">Cost<input type="number" min="0" value={part.unit_cost} onChange={(e) => setPart({ ...part, unit_cost: e.target.value })} placeholder="0" disabled={locked} /></label>
-                <label className="narrow">Price<input type="number" min="0" value={part.unit_price} onChange={(e) => setPart({ ...part, unit_price: e.target.value })} placeholder="= cost" disabled={locked} /></label>
+                <label className="narrow">Price<input type="number" min="0" value={part.unit_price} onChange={(e) => setPart({ ...part, unit_price: e.target.value })} placeholder="0" disabled={locked} /></label>
               </>
             )}
             <button className="btn" disabled={busy || locked}>Add part</button>
           </form>
-          {showMoney && <p className="hint">Cost is what the part costs the shop; price is what the customer pays. Leave price empty to charge the same as the cost.</p>}
+          {showMoney && <p className="hint">Cost is what the part cost the shop and is not added to the bill. The bill is the service fee, so only fill in a price if you charge extra for this part.</p>}
 
           <div className="table-wrap">
             <table>
